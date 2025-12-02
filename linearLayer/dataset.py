@@ -1,6 +1,6 @@
 import numpy as np
 
-def make_soudry_dataset(n=200, d=5000, margin=0.1, sigma=3.0):
+def make_soudry_dataset(n=200, d=5000, margin=1, sigma=0.3):
     v = np.ones(d) / np.sqrt(d)
     n2 = n // 2
 

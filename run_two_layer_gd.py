@@ -27,7 +27,7 @@ def main():
     # Learning rate sweep
     # ----------------------------------------------------------
     learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
-    total_iters = 100_000
+    total_iters = 2
 
     # ----------------------------------------------------------
     # Register NumPy optimizers

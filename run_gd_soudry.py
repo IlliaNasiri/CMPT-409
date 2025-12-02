@@ -15,7 +15,7 @@ np.random.seed(SEED)
 random.seed(SEED)
 
 def main():
-    X, y, v_pop = make_soudry_dataset(n=200, d=5000, margin=0.1, sigma=3.0)
+    X, y, v_pop = make_soudry_dataset(n=200, d=5000)
     w_star = get_empirical_max_margin(X, y)
 
     print("Angle(v, w*):", get_angle(v_pop, w_star))

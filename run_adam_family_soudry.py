@@ -17,13 +17,11 @@ np.random.seed(SEED)
 random.seed(SEED)
 
 def main():
-    X, y, v_pop = make_soudry_dataset(n=200, d=5000, margin=0.1, sigma=3.0)
+    X, y, v_pop = make_soudry_dataset(n=200, d=5000)
     w_star = get_empirical_max_margin(X, y)
 
     print("Angle(v, w*):", get_angle(v_pop, w_star))
 
-    # learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
-    
     learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
     D = X.shape[1]   # number of features
 

@@ -5,6 +5,8 @@ from .metrics import (
     exponential_loss, get_error_rate
 )
 
+from sklearn.model_selection import train_test_split
+
 def run_training(
     X, y, w_star,
     optimizers,
@@ -12,6 +14,7 @@ def run_training(
     total_iters=100_000,
     debug=True  # <--- debug mode enabled by default
 ):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     results = {}
 
@@ -37,7 +40,7 @@ def run_training(
             D = X.shape[1]
             w = np.random.randn(D) * 1e-6   # fresh init
 
-            hist = {"steps": [], "dist": [], "angle": [], "loss": [], "err": []}
+            hist = {"steps": [], "dist": [], "angle": [], "loss": [], "test_err": [], "test_loss": [] }
             rec_idx = 0
 
             # ------------------------------
@@ -47,7 +50,7 @@ def run_training(
 
                 try:
                     # UPDATE STEP
-                    w = step_fn(w, X, y, lr)
+                    w = step_fn(w, X_train, y_train, lr)
 
                     # DETECT silent numeric issues
                     if np.isnan(w).any() or np.isinf(w).any():
@@ -67,8 +70,11 @@ def run_training(
                     hist["steps"].append(t)
                     hist["dist"].append(get_direction_distance(w, w_star))
                     hist["angle"].append(get_angle(w, w_star))
-                    hist["loss"].append(exponential_loss(w, X, y))
-                    err_val = get_error_rate(w, X, y)
+                    hist["loss"].append(exponential_loss(w, X_train, y_train))
+                    hist["test_loss"].append(exponential_loss(w, X_test, y_test))
+                    err_val = get_error_rate(w, X_test, y_test)
+                    hist["test_err"] = err_val
+
                     rec_idx += 1
 
             # -----------------------------------------

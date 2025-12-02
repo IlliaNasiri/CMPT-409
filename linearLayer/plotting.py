@@ -11,7 +11,7 @@ def plot_all(results, learning_rates, optimizers, experiment_name="default"):
 
     metrics = [
         ("loss", "Exponential Loss", "loss.png"),
-        ("err",  "Classification Error", "error.png"),
+        ("test_err",  "Classification Error", "error.png"),
     ]
 
     # save npz

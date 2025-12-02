@@ -3,6 +3,8 @@ import numpy as np
 from tqdm import tqdm
 from .optimizers import *
 
+from sklearn.model_selection import train_test_split
+
 def run_training(
     X_np, y_np,
     optimizers,
@@ -15,6 +17,8 @@ def run_training(
 
     X = torch.tensor(X_np, dtype=torch.float32, device=device)
     y = torch.tensor(y_np, dtype=torch.float32, device=device)
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     N, D = X.shape
     results = {}
@@ -30,7 +34,7 @@ def run_training(
 
             model = TwoLayerNet(D, k).to(device)
 
-            hist = {"steps": [], "loss": [], "err": []}
+            hist = {"steps": [], "loss": [], "test_err": [], "test_loss": []}
             rec_idx = 0
 
             if debug:
@@ -39,19 +43,21 @@ def run_training(
             for t in tqdm(range(1, total_iters+1), leave=False):
 
                 try:
-                    model = step_fn(model, X, y, lr)
+                    model = step_fn(model, X_train, y_train, lr)
                 except Exception as e:
                     print(f"Optimizer crashed: {name} lr={lr} step={t}")
                     print(repr(e))
                     break
 
                 if rec_idx < len(record_steps) and t == record_steps[rec_idx]:
-                    loss = exponential_loss_2layer_torch(model, X, y).item()
-                    err  = error_rate_2layer_torch(model, X, y).item()
+                    loss = exponential_loss_2layer_torch(model, X_train, y_train).item()
+                    err  = error_rate_2layer_torch(model, X_test, y_test).item()
+                    test_loss = exponential_loss_2layer_torch(model, X_test, y_test).item()
 
                     hist["steps"].append(t)
                     hist["loss"].append(loss)
-                    hist["err"].append(err)
+                    hist["test_err"].append(err)
+                    hist["test_loss"].append(test_loss)
 
                     rec_idx += 1
 

@@ -10,11 +10,7 @@ from linearLayer.trainer import run_training
 from linearLayer.plotting import plot_all
 from linearLayer.adam_optimizers import *
 
-
-
-
-
-
+from sklearn.model_selection import train_test_split
 
 # ===============================================================
 # Main experiment
@@ -32,6 +28,7 @@ def main():
     X_t = torch.tensor(X, dtype=torch.float32)
     y_t = torch.tensor(y, dtype=torch.float32)
 
+
     # ----------------------------------------------------------
     # Width k
     # ----------------------------------------------------------
@@ -40,8 +37,8 @@ def main():
     # ----------------------------------------------------------
     # Learning rates
     # ----------------------------------------------------------
-    learning_rates = [1e-4]
-    total_iters = 100_000
+    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
+    total_iters = 10_000
 
     # ----------------------------------------------------------
     # Optimizer registry
