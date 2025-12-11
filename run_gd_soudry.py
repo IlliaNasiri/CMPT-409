@@ -1,37 +1,74 @@
-OUTPUT_DIR = "soudry"
-
-from regression.dataset import make_soudry_dataset
-from regression.metrics import get_empirical_max_margin, get_angle
-from regression.optimizers import (
-    step_gd, step_sam_stable, step_ngd_stable, step_sam_ngd_stable
+from experiment import (
+    run_training,
+    LinearModel,
+    DatasetSplit,
+    Metric,
+    Optimizer,
+    ComputeBackend,
+    MetricsCollector,
+    split_train_test,
+    make_soudry_dataset,
+    get_empirical_max_margin,
+    exponential_loss,
+    get_error_rate,
+    get_angle,
+    get_direction_distance,
 )
-from regression.trainer import run_training
-from regression.plotting import plot_all
-
-SEED = 42
-import numpy as np
-import random
-np.random.seed(SEED)
-random.seed(SEED)
+from experiment.optimizers import step_gd, step_sam_stable, step_ngd_stable, step_sam_ngd_stable
+from experiment.plotting import plot_all
 
 def main():
+    # Generate dataset
     X, y, v_pop = make_soudry_dataset(n=200, d=5000)
     w_star = get_empirical_max_margin(X, y)
 
-    print("Angle(v, w*):", get_angle(v_pop, w_star))
+    # Split data
+    datasets = split_train_test(X, y, test_size=0.2, random_state=42)
 
-    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
+    # Model factory
+    def model_factory():
+        return LinearModel(X.shape[1], backend=ComputeBackend.NumPy)
 
+    # Metrics factory
+    def metrics_factory(model):
+        return MetricsCollector(
+            metric_fns={
+                Metric.Loss: exponential_loss,
+                Metric.Error: get_error_rate,
+                Metric.Angle: get_angle,
+                Metric.Distance: get_direction_distance,
+            },
+            w_star=w_star
+        )
+
+    # Optimizers
     optimizers = {
-        "GD": step_gd,
-        "SAM": step_sam_stable,
-        "NGD": step_ngd_stable,
-        "SAM_NGD": step_sam_ngd_stable
+        Optimizer.GD: step_gd,
+        Optimizer.SAM: step_sam_stable,
+        Optimizer.NGD: step_ngd_stable,
+        Optimizer.SAM_NGD: step_sam_ngd_stable,
     }
 
-    results = run_training(X, y, w_star, optimizers, learning_rates)
-    plot_all(results, learning_rates, optimizers , OUTPUT_DIR)
+    # Run training
+    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
+    results = run_training(
+        datasets=datasets,
+        model_factory=model_factory,
+        optimizers=optimizers,
+        learning_rates=learning_rates,
+        metrics_collector_factory=metrics_factory,
+        train_split=DatasetSplit.Train,
+        total_iters=100_000,
+        debug=True
+    )
+
+    # Plotting
+    plot_all(
+        results,
+        learning_rates,
+        list(optimizers.keys()),
+        experiment_name="soudry"
+    )
 
 if __name__ == "__main__":
     main()
-
