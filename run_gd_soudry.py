@@ -1,4 +1,4 @@
-from experiment import (
+from engine import (
     run_training,
     LinearModel,
     DatasetSplit,
@@ -14,8 +14,8 @@ from experiment import (
     get_angle,
     get_direction_distance,
 )
-from experiment.optimizers import step_gd, step_sam_stable, step_ngd_stable, step_sam_ngd_stable
-from experiment.plotting import plot_all
+from engine.optimizers import step_gd, step_sam_stable, step_ngd_stable, step_sam_ngd_stable
+from engine.plotting import plot_all
 
 def main():
     # Generate dataset

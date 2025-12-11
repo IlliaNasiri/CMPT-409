@@ -7,25 +7,37 @@ from .base import make_adaptive_optimizer
 
 def Adam(lr: float, device: str = 'cpu', betas=(0.9, 0.999), eps=1e-8):
     """Returns a StatefulOptimizer using Adam."""
-    return make_adaptive_optimizer(_make_adam_step, device=device, betas=betas, eps=eps)
+    # Closure to bind 'lr' and ignore the step_lr passed by StatefulOptimizer
+    return make_adaptive_optimizer(
+        lambda D, _, **kwargs: _make_adam_step(D, lr, **kwargs),
+        device=device, betas=betas, eps=eps
+    )
 
 def Adagrad(lr: float, device: str = 'cpu', eps=1e-8):
     """Returns a StatefulOptimizer using Adagrad."""
-    return make_adaptive_optimizer(_make_adagrad_step, device=device, eps=eps)
+    return make_adaptive_optimizer(
+        lambda D, _, **kwargs: _make_adagrad_step(D, lr, **kwargs),
+        device=device, eps=eps
+    )
 
 def SAM_Adam(lr: float, device: str = 'cpu', rho=0.05, betas=(0.9, 0.999), eps=1e-8):
     """Returns a StatefulOptimizer using SAM-Adam."""
-    return make_adaptive_optimizer(_make_sam_adam_step, device=device, rho=rho, betas=betas, eps=eps)
+    return make_adaptive_optimizer(
+        lambda D, _, **kwargs: _make_sam_adam_step(D, lr, **kwargs),
+        device=device, rho=rho, betas=betas, eps=eps
+    )
 
 def SAM_Adagrad(lr: float, device: str = 'cpu', rho=0.05, eps=1e-8):
     """Returns a StatefulOptimizer using SAM-Adagrad."""
-    return make_adaptive_optimizer(_make_sam_adagrad_step, device=device, rho=rho, eps=eps)
-
+    return make_adaptive_optimizer(
+        lambda D, _, **kwargs: _make_sam_adagrad_step(D, lr, **kwargs),
+        device=device, rho=rho, eps=eps
+    )
 # -----------------------------------------------------------------------------
 # Internal Factory Functions
 # -----------------------------------------------------------------------------
 
-def _make_adam_step(D: int, lr: float, device='cpu', betas=(0.9, 0.999), eps=1e-8):
+def make_adam_step(D: int, lr: float, device='cpu', betas=(0.9, 0.999), eps=1e-8):
     """
     Internal factory for Adam step function.
     """
@@ -35,7 +47,7 @@ def _make_adam_step(D: int, lr: float, device='cpu', betas=(0.9, 0.999), eps=1e-
 
     def step(w, X, y, lr_unused=None):
         nonlocal w_torch, opt
-        
+
         # Load external weights into internal state
         # Assumes w, X, y are torch.Tensors on the correct device
         with torch.no_grad():
@@ -55,7 +67,7 @@ def _make_adam_step(D: int, lr: float, device='cpu', betas=(0.9, 0.999), eps=1e-
     return step
 
 
-def _make_adagrad_step(D: int, lr: float, device='cpu', eps=1e-8):
+def make_adagrad_step(D: int, lr: float, device='cpu', eps=1e-8):
     """
     Internal factory for Adagrad step function.
     """
@@ -64,7 +76,7 @@ def _make_adagrad_step(D: int, lr: float, device='cpu', eps=1e-8):
 
     def step(w, X, y, lr_unused=None):
         nonlocal w_torch, opt
-        
+
         with torch.no_grad():
             w_torch.copy_(w)
         w_torch.requires_grad_(True)
@@ -81,7 +93,7 @@ def _make_adagrad_step(D: int, lr: float, device='cpu', eps=1e-8):
     return step
 
 
-def _make_sam_adam_step(D: int, lr: float, device='cpu', rho=0.05, betas=(0.9, 0.999), eps=1e-8):
+def make_sam_adam_step(D: int, lr: float, device='cpu', rho=0.05, betas=(0.9, 0.999), eps=1e-8):
     """
     Internal factory for SAM-Adam step function.
     """
@@ -122,7 +134,7 @@ def _make_sam_adam_step(D: int, lr: float, device='cpu', rho=0.05, betas=(0.9, 0
         # We want to update the original point using the gradient from the adversarial point
         with torch.no_grad():
             w_torch.copy_(w)
-            
+
         opt.step()
 
         return w_torch.detach()
@@ -130,7 +142,7 @@ def _make_sam_adam_step(D: int, lr: float, device='cpu', rho=0.05, betas=(0.9, 0
     return step
 
 
-def _make_sam_adagrad_step(D: int, lr: float, device='cpu', rho=0.05, eps=1e-8):
+def make_sam_adagrad_step(D: int, lr: float, device='cpu', rho=0.05, eps=1e-8):
     """
     Internal factory for SAM-Adagrad step function.
     """
