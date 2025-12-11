@@ -11,3 +11,14 @@ dependencies = [
     "torch>=2.9.1",
     "tqdm>=4.67.1",
 ]
+
+[tool.ruff.format]
+# Exclude all files from being formatted by Ruff
+exclude = ["**"]
+
+[tool.pylsp.plugins.ruff]
+enabled = true
+# Disable Ruff acting as a formatter
+format = false 
+# Depending on your plugin version, you might also need:
+formatEnabled = false
