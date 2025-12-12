@@ -2,7 +2,6 @@
 
 # Core types
 from .types import (
-    ComputeBackend,
     DatasetSplit,
     Metric,
     Optimizer,
@@ -37,7 +36,6 @@ from .trainer import run_training
 
 __all__ = [
     # Types
-    'ComputeBackend',
     'DatasetSplit',
     'Metric',
     'Optimizer',

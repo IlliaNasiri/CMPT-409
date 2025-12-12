@@ -4,7 +4,6 @@ from engine import (
     DatasetSplit,
     Metric,
     Optimizer,
-    ComputeBackend,
     MetricsCollector,
     split_train_test,
     make_soudry_dataset,
@@ -19,14 +18,23 @@ from engine.plotting import plot_all
 import numpy as np
 import random
 import torch
+import os
+
+# Configure PyTorch to use all CPU cores
+torch.set_num_threads(os.cpu_count())
 
 SEED = 42
 np.random.seed(SEED)
 random.seed(SEED)
+torch.manual_seed(SEED)
 
 def main():
-    # Generate dataset
-    X, y, v_pop = make_soudry_dataset(n=200, d=5000)
+    # Use GPU if available
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+
+    # Generate dataset (Torch only now)
+    X, y, v_pop = make_soudry_dataset(n=200, d=5000, device=device)
     w_star = get_empirical_max_margin(X, y)
 
     print("Angle(v, w*):", get_angle(v_pop, w_star))
@@ -34,9 +42,9 @@ def main():
     # Split data
     datasets = split_train_test(X, y, test_size=0.2, random_state=SEED)
 
-    # Model factory (LinearModel with Torch backend for adaptive optimizers)
+    # Model factory (Torch only now)
     def model_factory():
-        return LinearModel(X.shape[1], backend=ComputeBackend.Torch, device="cpu")
+        return LinearModel(X.shape[1], device=device)
 
     # Metrics factory (includes Angle/Distance for linear model)
     def metrics_factory(model):

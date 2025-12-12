@@ -7,7 +7,6 @@ from engine import (
     DatasetSplit,
     Metric,
     Optimizer,
-    ComputeBackend,
     MetricsCollector,
     split_train_test,
     make_soudry_dataset,
@@ -17,14 +16,22 @@ from engine import (
 from engine.optimizers import step_gd, step_ngd_stable, step_sam_stable, step_sam_ngd_stable
 from engine.optimizers.base import make_optimizer
 from engine.plotting import plot_all
+import torch
+import os
 
+# Configure PyTorch to use all CPU cores
+torch.set_num_threads(os.cpu_count())
 
 def main():
+    # Use GPU if available
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+
     # ----------------------------------------------------------
     # Dataset
     # ----------------------------------------------------------
     N, D = 200, 5000
-    X, y, v_pop = make_soudry_dataset(N, D)
+    X, y, v_pop = make_soudry_dataset(N, D, device=device)
     print("Dataset ready:", X.shape, y.shape)
 
     # Split data
@@ -35,9 +42,9 @@ def main():
     # ----------------------------------------------------------
     k = 50
 
-    # Model factory (TwoLayerModel with PyTorch backend)
+    # Model factory (Torch only now)
     def model_factory():
-        return TwoLayerModel(D, k, backend=ComputeBackend.Torch, device="cpu")
+        return TwoLayerModel(D, k, device=device)
 
     # Metrics factory (NO w_star for two-layer)
     def metrics_factory(model):

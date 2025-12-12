@@ -1,14 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import List, Union
-import numpy as np
 import torch
-from ..types import ComputeBackend, ArrayLike
+from ..types import ArrayLike
 
 class Model(ABC):
-    """Abstract base for optimization models"""
+    """Abstract base for optimization models (PyTorch only)"""
 
-    def __init__(self, backend: ComputeBackend, device: str = "cpu"):
-        self.backend = backend
+    def __init__(self, device: str = "cpu"):
         self.device = device
 
     @abstractmethod
@@ -18,7 +16,7 @@ class Model(ABC):
 
     @abstractmethod
     def parameters(self) -> List[ArrayLike]:
-        """Returns a list of mutable parameter tensors/arrays."""
+        """Returns a list of mutable parameter tensors."""
         pass
 
     @abstractmethod

@@ -34,16 +34,13 @@ class OptimizerState(ABC):
 class StatelessOptimizer(OptimizerState):
     """Wrapper for stateless optimizers (GD, SAM, NGD)"""
 
-    def __init__(self, step_fn: Callable[[Model, ArrayLike, ArrayLike, Optional[float]], ArrayLike]):
-        # self.model = None
+    def __init__(self, step_fn: Callable):
         self.step_fn = step_fn
+        self.loss_fn = ExponentialLoss()  # Create once, reuse across all steps
 
-    def step(self, model: Model, X: ArrayLike, y: ArrayLike, lr: float) -> ArrayLike:
-        w = model.parameters()[0]
-        w_step = self.step_fn(w, X, y, lr)
-        model.w = w_step
-
-        return w_step
+    def step(self, model: Model, X: ArrayLike, y: ArrayLike, lr: float):
+        # Pass the reusable loss function to the step function
+        self.step_fn(model, X, y, lr, self.loss_fn)
 
     def reset(self):
         pass  # No state to reset

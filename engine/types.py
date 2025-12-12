@@ -1,16 +1,10 @@
 from enum import Enum, auto
 from dataclasses import dataclass
-from typing import Any, Optional, Union
-import numpy as np
+from typing import Any, Optional
 import torch
 
-ArrayLike = Union[np.ndarray, torch.Tensor]
-
-FloatLike = Union[float, np.floating[Any], torch.types.FloatLikeType, torch.Tensor]
-
-class ComputeBackend(Enum):
-    NumPy = auto()
-    Torch = auto()
+# Everything is Torch now
+ArrayLike = torch.Tensor
 
 class DatasetSplit(Enum):
     Train = auto()
