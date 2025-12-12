@@ -1,5 +1,5 @@
 import torch
-from .base import make_adaptive_optimizer
+from .base import make_adaptive_optimizer, make_sam_optimizer
 
 # -----------------------------------------------------------------------------
 # Public Optimizer Constructors
@@ -14,24 +14,15 @@ def Adam(lr: float, device: str = 'cpu', betas=(0.9, 0.999), eps=1e-8):
 
 def Adagrad(lr: float, device: str = 'cpu', eps=1e-8):
     """Returns a StatefulOptimizer using Adagrad."""
-    return make_adaptive_optimizer(
-        lambda D, _, **kwargs: make_adagrad_step(D, lr, **kwargs),
-        device=device, eps=eps
-    )
+    return make_adaptive_optimizer(torch.optim.Adagrad, lr=lr, eps=eps)
 
 def SAM_Adam(lr: float, device: str = 'cpu', rho=0.05, betas=(0.9, 0.999), eps=1e-8):
-    """Returns a StatefulOptimizer using SAM-Adam."""
-    return make_adaptive_optimizer(
-        lambda D, _, **kwargs: make_sam_adam_step(D, lr, **kwargs),
-        device=device, rho=rho, betas=betas, eps=eps
-    )
+    """Returns a SAMOptimizer using SAM-Adam."""
+    return make_sam_optimizer(torch.optim.Adam, rho=rho, lr=lr, betas=betas, eps=eps)
 
 def SAM_Adagrad(lr: float, device: str = 'cpu', rho=0.05, eps=1e-8):
-    """Returns a StatefulOptimizer using SAM-Adagrad."""
-    return make_adaptive_optimizer(
-        lambda D, _, **kwargs: make_sam_adagrad_step(D, lr, **kwargs),
-        device=device, rho=rho, eps=eps
-    )
+    """Returns a SAMOptimizer using SAM-Adagrad."""
+    return make_sam_optimizer(torch.optim.Adagrad, rho=rho, lr=lr, eps=eps)
 # -----------------------------------------------------------------------------
 # Internal Factory Functions
 # -----------------------------------------------------------------------------

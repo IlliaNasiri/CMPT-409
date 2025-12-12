@@ -85,6 +85,55 @@ class StatefulOptimizer(OptimizerState):
         self.optimizer = None
 
 
+class SAMOptimizer(OptimizerState):
+    """
+    Sharpness-Aware Minimization wrapper for PyTorch optimizers.
+    Performs SAM's double forward/backward pass.
+    """
+    def __init__(self, torch_opt_class: type[torch.optim.Optimizer], rho: float = 0.05, **kwargs):
+        self.opt_class = torch_opt_class
+        self.kwargs = kwargs
+        self.rho = rho
+        self.optimizer: Optional[torch.optim.Optimizer] = None
+
+    def step(self, model: Model, X: ArrayLike, y: ArrayLike, lr: float):
+        # 1. Lazy Initialization
+        if self.optimizer is None:
+            self.optimizer = self.opt_class(model.parameters(), **self.kwargs)
+            self.loss_fn = ExponentialLoss()
+
+        # 2. First forward/backward to compute gradient at current point
+        self.optimizer.zero_grad()
+        scores = model.forward(X)
+        loss = self.loss_fn(scores, y)
+        loss.backward()
+
+        # 3. Compute perturbation and save current parameters
+        original_params = []
+        with torch.no_grad():
+            for p in model.parameters():
+                original_params.append(p.clone())
+                if p.grad is not None:
+                    grad_norm = p.grad.norm() + 1e-12
+                    p.add_(p.grad, alpha=self.rho / grad_norm)
+
+        # 4. Second forward/backward at perturbed point
+        self.optimizer.zero_grad()
+        scores_adv = model.forward(X)
+        loss_adv = self.loss_fn(scores_adv, y)
+        loss_adv.backward()
+
+        # 5. Restore original parameters and apply update
+        with torch.no_grad():
+            for p, p_orig in zip(model.parameters(), original_params):
+                p.copy_(p_orig)
+
+        self.optimizer.step()
+
+    def reset(self):
+        self.optimizer = None
+
+
 class ExponentialLoss(nn.Module):
     """
     Computes the mean exponential loss: mean(exp(-y * y_pred))
@@ -127,3 +176,7 @@ def make_optimizer(step_fn: Callable) -> OptimizerState:
 def make_adaptive_optimizer(factory_fn: Callable, **kwargs) -> OptimizerState:
     """Create optimizer from factory function (Adam, Adagrad)"""
     return StatefulOptimizer(factory_fn, **kwargs)
+
+def make_sam_optimizer(torch_opt_class: type[torch.optim.Optimizer], rho: float = 0.05, **kwargs) -> OptimizerState:
+    """Create SAM optimizer wrapping a PyTorch optimizer"""
+    return SAMOptimizer(torch_opt_class, rho=rho, **kwargs)

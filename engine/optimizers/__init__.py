@@ -6,12 +6,15 @@ from .first_order import (
 )
 from .adaptive import (
     Adam,
+    Adagrad,
+    SAM_Adam,
+    SAM_Adagrad,
     make_adam_step,
     make_adagrad_step,
     make_sam_adam_step,
     make_sam_adagrad_step
 )
-from .base import make_optimizer, make_adaptive_optimizer, OptimizerState, StatelessOptimizer, StatefulOptimizer
+from .base import make_optimizer, make_adaptive_optimizer, make_sam_optimizer, OptimizerState, StatelessOptimizer, StatefulOptimizer
 
 __all__ = [
     'step_gd',
@@ -24,8 +27,12 @@ __all__ = [
     'make_sam_adagrad_step',
     'make_optimizer',
     'make_adaptive_optimizer',
+    'make_sam_optimizer',
     'OptimizerState',
     'StatelessOptimizer',
     'StatefulOptimizer',
     'Adam',
+    'Adagrad',
+    'SAM_Adam',
+    'SAM_Adagrad',
 ]
