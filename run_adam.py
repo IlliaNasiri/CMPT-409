@@ -13,7 +13,13 @@ from engine import (
     get_angle,
     get_direction_distance,
 )
-from engine.optimizers import make_adaptive_optimizer, make_sam_optimizer
+# Import the manual optimized factories
+from engine.optimizers.manual import (
+    ManualAdam, 
+    ManualAdaGrad, 
+    ManualSAMAdam, 
+    ManualSAMAdaGrad
+)
 from engine.plotting import plot_all
 import torch
 import os
@@ -26,16 +32,17 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    # Generate dataset (Torch only now)
+    # Generate dataset
     X, y, v_pop = make_soudry_dataset(n=200, d=5000, device=device)
     w_star = get_empirical_max_margin(X, y)
 
     # Split data
     datasets = split_train_test(X, y, test_size=0.2, random_state=42)
 
-    # Model factory (Torch only now)
+    # Model factory
+    # Note: Ensure TwoLayerModel is purely linear (Sequential(Linear, Linear)) 
+    # to match the manual optimizer's gradient derivation.
     def model_factory():
-        # Using TwoLayerModel with a hidden dimension of 100
         return TwoLayerModel(X.shape[1], 100, device=device)
 
     # Metrics factory
@@ -51,16 +58,17 @@ def main():
         )
 
     # Optimizers
+    # Using the fused manual implementations for ~2x speedup on small models
     optimizers = {
-        Optimizer.Adam: make_adaptive_optimizer(torch.optim.Adam, betas=(0.9, 0.999), eps=1e-8),
-        Optimizer.AdaGrad: make_adaptive_optimizer(torch.optim.Adagrad, eps=1e-8),
-        Optimizer.SAM_Adam: make_sam_optimizer(torch.optim.Adam, rho=0.05, betas=(0.9, 0.999), eps=1e-8),
-        Optimizer.SAM_AdaGrad: make_sam_optimizer(torch.optim.Adagrad, rho=0.05, eps=1e-8),
+        Optimizer.Adam: ManualAdam(betas=(0.9, 0.999), eps=1e-8),
+        Optimizer.AdaGrad: ManualAdaGrad(eps=1e-8),
+        Optimizer.SAM_Adam: ManualSAMAdam(rho=0.05, betas=(0.9, 0.999), eps=1e-8),
+        Optimizer.SAM_AdaGrad: ManualSAMAdaGrad(rho=0.05, eps=1e-8),
     }
 
     # Run training
     learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
-    #learning_rates = [1e-4]
+    
     results = run_training(
         datasets=datasets,
         model_factory=model_factory,
@@ -82,3 +90,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

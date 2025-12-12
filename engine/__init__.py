@@ -11,7 +11,6 @@ from .types import (
 # Data management
 from .data import (
     make_soudry_dataset,
-    split_train_val_test,
     split_train_test,
 )
 
@@ -42,7 +41,6 @@ __all__ = [
     'MetricKey',
     # Data
     'make_soudry_dataset',
-    'split_train_val_test',
     'split_train_test',
     # Metrics
     'MetricsCollector',

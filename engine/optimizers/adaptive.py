@@ -1,5 +1,6 @@
 import torch
-from .base import make_adaptive_optimizer, make_sam_optimizer
+import math
+from .base import make_adaptive_optimizer, make_sam_optimizer, OptimizerState
 
 # -----------------------------------------------------------------------------
 # Public Optimizer Constructors
@@ -23,38 +24,27 @@ def SAM_Adam(lr: float, device: str = 'cpu', rho=0.05, betas=(0.9, 0.999), eps=1
 def SAM_Adagrad(lr: float, device: str = 'cpu', rho=0.05, eps=1e-8):
     """Returns a SAMOptimizer using SAM-Adagrad."""
     return make_sam_optimizer(torch.optim.Adagrad, rho=rho, lr=lr, eps=eps)
+
 # -----------------------------------------------------------------------------
-# Internal Factory Functions
+# Internal Factory Functions (Legacy / for reference)
 # -----------------------------------------------------------------------------
 
 def make_adam_step(D: int, lr: float, device='cpu', betas=(0.9, 0.999), eps=1e-8):
-    """
-    Internal factory for Adam step function.
-    """
-    # Persistent state strictly typed to float64 and specific device
-    print(f"{D}, dtype=torch.float64, device={device}")
+    """Internal factory for standard Adam step function."""
     w_torch = torch.zeros(D, dtype=torch.float64, device=device, requires_grad=True)
     opt = torch.optim.Adam([w_torch], lr=lr, betas=betas, eps=eps)
 
     def step(w, X, y, lr_unused=None):
         nonlocal w_torch, opt
-
-        # Load external weights into internal state
-        # Assumes w, X, y are torch.Tensors on the correct device
         with torch.no_grad():
             w_torch.copy_(w)
         w_torch.requires_grad_(True)
-
-        # Standard loss computation
         margins = y * (X @ w_torch)
         loss = torch.mean(torch.exp(-torch.clamp(margins, min=-50)))
-
         opt.zero_grad()
         loss.backward()
         opt.step()
-
         return w_torch.detach()
-
     return step
 
 
