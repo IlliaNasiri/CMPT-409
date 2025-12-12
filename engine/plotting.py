@@ -37,6 +37,11 @@ def plot_all(
             metric_types[metric_name] = []
         metric_types[metric_name].append(key)
 
+    # cpu_results = {}
+    # for (lr, d_opt) in results.items():
+    #     for (opt, history) in d_opt.items():
+    #         cpu_results[lr][opt] = history.to_dict()
+
     # Plot each metric type
     for metric_name, keys in metric_types.items():
         if save_combined:
@@ -72,6 +77,7 @@ def plot_combined(results, learning_rates, optimizers, metric_keys, filepath):
         ax = axes[i]
         for opt in optimizers:
             history = results[lr][opt]
+            history.to_cpu()
             steps = history.get_steps()
 
             # Plot all keys for this metric (e.g., loss_train, loss_val, loss_test)
@@ -98,6 +104,7 @@ def plot_separate(results, learning_rates, optimizer, metric_keys, filepath):
 
     for lr in learning_rates:
         history = results[lr][optimizer]
+        history.to_cpu()
         steps = history.get_steps()
 
         for key in metric_keys:

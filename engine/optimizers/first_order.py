@@ -1,11 +1,19 @@
 import numpy as np
+import torch
 
 def step_gd(w, X, y, lr):
-    margins = y * (X @ w)
-    safe_margins = np.clip(margins, -50, None)
-    coeffs = np.exp(-safe_margins)
-    grad = - (X.T @ (y * coeffs)) / len(y)
-    return w - lr * grad
+    if isinstance(w, torch.Tensor):
+        margins = y * torch.matmul(X, w)
+        safe_margins = torch.clip(margins, -50, None)
+        coeffs = torch.exp(-safe_margins)
+        grad = - torch.matmul(X.T, (y * coeffs)) / len(y)
+        return w - lr * grad
+    else:
+        margins = y * (X @ w)
+        safe_margins = np.clip(margins, -50, None)
+        coeffs = np.exp(-safe_margins)
+        grad = - (X.T @ (y * coeffs)) / len(y)
+        return w - lr * grad
 
 def step_ngd_stable(w, X, y, lr):
     margins = y * (X @ w)

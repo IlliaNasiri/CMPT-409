@@ -6,6 +6,8 @@ import torch
 
 ArrayLike = Union[np.ndarray, torch.Tensor]
 
+FloatLike = Union[float, np.floating[Any], torch.types.FloatLikeType, torch.Tensor]
+
 class ComputeBackend(Enum):
     NumPy = auto()
     Torch = auto()

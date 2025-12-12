@@ -1,6 +1,7 @@
+import numpy as np
 from engine import (
     run_training,
-    LinearModel,
+    TwoLayerModel,
     DatasetSplit,
     Metric,
     Optimizer,
@@ -14,9 +15,11 @@ from engine import (
     get_angle,
     get_direction_distance,
 )
-from engine.optimizers import step_gd, step_sam_stable, step_ngd_stable, step_sam_ngd_stable
-from engine.optimizers.base import make_optimizer
+from engine.optimizers.adaptive import make_adam_step
 from engine.plotting import plot_all
+from engine.optimizers import OptimizerState, make_adaptive_optimizer, Adam
+
+import torch
 
 def main():
     # Generate dataset
@@ -28,7 +31,8 @@ def main():
 
     # Model factory
     def model_factory():
-        return LinearModel(X.shape[1], backend=ComputeBackend.NumPy)
+        # Using TwoLayerModel with a hidden dimension of 100
+        return TwoLayerModel(X.shape[1], 100, backend=ComputeBackend.Torch, device="cuda:0")
 
     # Metrics factory
     def metrics_factory(model):
@@ -44,10 +48,7 @@ def main():
 
     # Optimizers
     optimizers = {
-        Optimizer.GD: make_optimizer(step_gd),
-        Optimizer.SAM: make_optimizer(step_sam_stable),
-        Optimizer.NGD: make_optimizer(step_ngd_stable),
-        Optimizer.SAM_NGD: make_optimizer(step_sam_ngd_stable),
+        Optimizer.Adam: make_adaptive_optimizer(torch.optim.Adam, betas=(0.9, 0.999), eps=1e-8),
     }
 
     # Run training
@@ -69,7 +70,7 @@ def main():
         results,
         learning_rates,
         list(optimizers.keys()),
-        experiment_name="soudry"
+        experiment_name="adam_soudry_twolayer"
     )
 
 if __name__ == "__main__":

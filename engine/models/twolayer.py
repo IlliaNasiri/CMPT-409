@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from .base import Model, ArrayLike
 from ..types import ComputeBackend
-from typing import List
+from typing import List, override
 
 class TwoLayerModel(Model):
     """f(x) = mean(W2 @ relu(W1 @ x)) — PyTorch only"""
@@ -11,7 +12,7 @@ class TwoLayerModel(Model):
         self,
         D: int,
         k: int,
-        output_dim: int = 10,
+        output_dim: int = 1,
         backend: ComputeBackend = ComputeBackend.Torch,
         device: str = "cpu"
     ):
@@ -24,26 +25,43 @@ class TwoLayerModel(Model):
         self.output_dim = output_dim
 
         # Initialize as nn.Module for autograd
-        self.W1 = nn.Parameter(torch.randn(k, D, dtype=torch.float64, device=device) * 0.01)
-        self.W2 = nn.Parameter(torch.randn(output_dim, k, dtype=torch.float64, device=device) * 0.01)
+        self.net = torch.nn.Sequential(
+            # Layer 1
+            torch.nn.Linear(D, k, bias=False),
+            # Layer 2
+            torch.nn.Linear(k, 1, bias=False),
+        ).double().to(device)
 
-    def predict(self, X: torch.Tensor) -> torch.Tensor:
-        """f(X) = mean(W2 @ relu(W1 @ X^T), dim=0)"""
-        Z = torch.relu(self.W1 @ X.T)  # (k, N)
-        pred = self.W2 @ Z              # (output_dim, N)
-        return pred.mean(dim=0)         # (N,) - mean over output_dim
 
-    def parameters(self) -> List[torch.Tensor]:
+    def forward(self, X: ArrayLike) -> ArrayLike:
+        """f(X) = W2 @ W1 @ X"""
+        Z = self.net(X)
+        return Z
+
+    def parameters(self) -> List[ArrayLike]:
         """Return [W1, W2]"""
-        return [self.W1, self.W2]
+        return self.net.parameters()
 
     def zero_grad(self):
         """Clear gradients"""
-        if self.W1.grad is not None:
-            self.W1.grad.zero_()
-        if self.W2.grad is not None:
-            self.W2.grad.zero_()
+        self.net.zero_grad()
 
     @property
     def num_parameters(self) -> int:
         return self.k * self.D + self.output_dim * self.k
+
+    @property
+    def effective_weight(self) -> torch.Tensor:
+        """
+        Computes the effective linear predictor W_eff = u^T V
+        Returns shape (D,)
+        """
+        # Access the internal linear layers
+        # Assumes internal structure: self.net[0] is W1, self.net[1] is W2
+        W1 = self.net[0].weight # Shape (k, D)
+        W2 = self.net[1].weight # Shape (1, k)
+        
+        # W_eff = W2 @ W1
+        with torch.no_grad():
+            W_eff = torch.matmul(W2, W1)
+        return W_eff.detach().view(-1)

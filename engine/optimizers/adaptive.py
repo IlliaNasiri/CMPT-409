@@ -9,28 +9,27 @@ def Adam(lr: float, device: str = 'cpu', betas=(0.9, 0.999), eps=1e-8):
     """Returns a StatefulOptimizer using Adam."""
     # Closure to bind 'lr' and ignore the step_lr passed by StatefulOptimizer
     return make_adaptive_optimizer(
-        lambda D, _, **kwargs: _make_adam_step(D, lr, **kwargs),
-        device=device, betas=betas, eps=eps
+        torch.optim.Adam, lr=lr, device=device, betas=betas, eps=eps
     )
 
 def Adagrad(lr: float, device: str = 'cpu', eps=1e-8):
     """Returns a StatefulOptimizer using Adagrad."""
     return make_adaptive_optimizer(
-        lambda D, _, **kwargs: _make_adagrad_step(D, lr, **kwargs),
+        lambda D, _, **kwargs: make_adagrad_step(D, lr, **kwargs),
         device=device, eps=eps
     )
 
 def SAM_Adam(lr: float, device: str = 'cpu', rho=0.05, betas=(0.9, 0.999), eps=1e-8):
     """Returns a StatefulOptimizer using SAM-Adam."""
     return make_adaptive_optimizer(
-        lambda D, _, **kwargs: _make_sam_adam_step(D, lr, **kwargs),
+        lambda D, _, **kwargs: make_sam_adam_step(D, lr, **kwargs),
         device=device, rho=rho, betas=betas, eps=eps
     )
 
 def SAM_Adagrad(lr: float, device: str = 'cpu', rho=0.05, eps=1e-8):
     """Returns a StatefulOptimizer using SAM-Adagrad."""
     return make_adaptive_optimizer(
-        lambda D, _, **kwargs: _make_sam_adagrad_step(D, lr, **kwargs),
+        lambda D, _, **kwargs: make_sam_adagrad_step(D, lr, **kwargs),
         device=device, rho=rho, eps=eps
     )
 # -----------------------------------------------------------------------------
@@ -42,6 +41,7 @@ def make_adam_step(D: int, lr: float, device='cpu', betas=(0.9, 0.999), eps=1e-8
     Internal factory for Adam step function.
     """
     # Persistent state strictly typed to float64 and specific device
+    print(f"{D}, dtype=torch.float64, device={device}")
     w_torch = torch.zeros(D, dtype=torch.float64, device=device, requires_grad=True)
     opt = torch.optim.Adam([w_torch], lr=lr, betas=betas, eps=eps)
 

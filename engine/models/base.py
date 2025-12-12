@@ -12,22 +12,20 @@ class Model(ABC):
         self.device = device
 
     @abstractmethod
-    def predict(self, X: ArrayLike) -> ArrayLike:
-        """Forward pass: X @ params -> predictions"""
+    def forward(self, X: ArrayLike) -> ArrayLike:
+        """Computes predictions."""
         pass
 
     @abstractmethod
     def parameters(self) -> List[ArrayLike]:
-        """Get list of all parameters"""
+        """Returns a list of mutable parameter tensors/arrays."""
         pass
 
     @abstractmethod
     def zero_grad(self):
-        """Clear gradients (for PyTorch models)"""
+        """Clears gradients."""
         pass
 
-    @property
-    @abstractmethod
-    def num_parameters(self) -> int:
-        """Total parameter count"""
+    def train(self, mode: bool = True):
+        """Optional: Toggle training mode (for Dropout/BatchNorm)."""
         pass

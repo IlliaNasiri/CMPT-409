@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from typing import List, Dict, Union
-from .types import MetricKey, ComputeBackend, ArrayLike
+from .types import MetricKey, ComputeBackend, ArrayLike, FloatLike
 
 class TrainingHistory:
     """Pre-allocated 2D array for metric storage"""
@@ -31,7 +31,7 @@ class TrainingHistory:
             case _:
                 raise NotImplementedError(f"ComputeBackend of {backend} not implemented")
 
-    def record(self, step: int, metrics: Dict[MetricKey, float]):
+    def record(self, step: int, metrics: Dict[MetricKey, FloatLike]):
         """Write metrics to pre-allocated row (no append)"""
         idx = self._current_idx
         self._steps[idx] = step
@@ -51,17 +51,19 @@ class TrainingHistory:
 
     def to_dict(self) -> Dict[str, np.ndarray]:
         """Convert to dict for plotting/saving (converts to numpy)"""
-        match self.backend:
-            case ComputeBackend.Torch:
-                steps = self._steps[:self._current_idx].cpu().numpy()
-                data = self._data[:self._current_idx].cpu().numpy()
-            case ComputeBackend.NumPy:
-                steps = self._steps[:self._current_idx]
-                data = self._data[:self._current_idx]
-            case _:
-                raise NotImplementedError(f"ComputeBackend of {self.backend} not implemented")
+        self.to_cpu()
 
+        steps = self._steps[:self._current_idx]
+        data = self._data[:self._current_idx]
         result = {"steps": steps}
         for i, key in enumerate(self.metric_keys):
             result[str(key)] = data[:, i]
         return result
+
+    def to_cpu(self):
+        if isinstance(self._steps, torch.Tensor):
+            self._steps = self._steps.cpu().numpy()
+        if isinstance(self._data, torch.Tensor):
+            self._data = self._data.cpu().numpy()
+        return self
+

@@ -1,15 +1,20 @@
 import numpy as np
+import torch
+import torch.nn as nn
 from typing import Dict, List, Callable, Tuple
 from tqdm import tqdm
-from .types import DatasetSplit, Optimizer, MetricKey, ComputeBackend
+
+from engine.optimizers.base import StatefulOptimizer, StatelessOptimizer
+from .types import DatasetSplit, Optimizer, MetricKey, ComputeBackend, ArrayLike
+from .optimizers import OptimizerState
 from .models.base import Model
 from .metrics import MetricsCollector
 from .history import TrainingHistory
 
 def run_training(
-    datasets: Dict[DatasetSplit, Tuple[np.ndarray, np.ndarray]],
+    datasets: Dict[DatasetSplit, Tuple[ArrayLike, ArrayLike]],
     model_factory: Callable[[], Model],
-    optimizers: Dict[Optimizer, Callable],
+    optimizers: Dict[Optimizer, OptimizerState],
     learning_rates: List[float],
     metrics_collector_factory: Callable[[Model], MetricsCollector],
     train_split: DatasetSplit = DatasetSplit.Train,
@@ -37,22 +42,41 @@ def run_training(
     record_steps.add(1)
     record_steps = sorted(record_steps)
 
-    X_train, y_train = datasets[train_split]
+    torch_datasets = {}
+    numpy_datasets = {}
+
     results = {}
 
     for lr in learning_rates:
         results[lr] = {}
 
-        for opt_enum, step_fn in optimizers.items():
+        for opt_enum, generic_optim in optimizers.items():
             if debug:
                 print(f"\nRunning {opt_enum.name} with lr={lr}")
 
             # Create fresh model and metrics collector
             model = model_factory()
-            collector = metrics_collector_factory(model)
 
-            # Pre-allocate history
-            metric_keys = collector.get_metric_keys(list(datasets.keys()))
+            # Convert inputs to Tensor if necessary
+            match model.backend:
+                case ComputeBackend.NumPy:
+                    if not numpy_datasets:
+                        for split, (X, y) in datasets.items():
+                            numpy_datasets[split] = (X, y)
+                    curr_datasets = numpy_datasets
+                case ComputeBackend.Torch:
+                    if not torch_datasets:
+                        for split, (X, y) in datasets.items():
+                            torch_datasets[split] = (torch.from_numpy(X).to(model.device), torch.from_numpy(y).to(model.device))
+                    curr_datasets = torch_datasets
+
+            X_train, y_train = curr_datasets[train_split]
+            collector = metrics_collector_factory(model)
+            #optim = generic_optim(lr)
+            generic_optim.reset()
+
+            # Pre-allocate history buffer
+            metric_keys = collector.get_metric_keys(list(curr_datasets.keys()))
             history = TrainingHistory(
                 metric_keys=metric_keys,
                 num_records=len(record_steps),
@@ -65,26 +89,50 @@ def run_training(
 
             for t in iterator:
                 try:
-                    # Optimizer step
-                    w = model.parameters()[0]  # Get current weights
-                    w_new = step_fn(w, X_train, y_train, lr)
-
-                    # Update model
-                    if model.backend == ComputeBackend.NumPy:
-                        model.w = w_new
-                    else:
-                        model.w.data = w_new
+                    w_new = generic_optim.step(model, X_train, y_train, lr)
 
                     # Record metrics at logging steps
                     if t in record_steps:
-                        metrics = collector.compute_all(w_new, datasets)
+                        metrics = collector.compute_all(model, curr_datasets)
                         history.record(t, metrics)
 
                 except Exception as e:
-                    if debug:
-                        print(f"Error at step {t}: {e}")
-                    break
+                    print(f"Error at step {t}: {e}")
+                    raise e
 
             results[lr][opt_enum] = history
 
     return results
+
+
+
+class ExponentialLoss(nn.Module):
+    """
+    Computes the mean exponential loss: mean(exp(-y * y_pred))
+    """
+    def __init__(self, clamp_min=-50, clamp_max=100):
+        super().__init__()
+        # Clamping is essential because exp() grows excessively fast.
+        # exp(100) is ~2e43, which is safe in float64 but huge.
+        self.clamp_min = clamp_min
+        self.clamp_max = clamp_max
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            input: The raw scores (logits) from the network. Shape (N, 1) or (N,)
+            target: The targets, MUST be {-1, 1}. Shape (N, 1) or (N,)
+        """
+        # Ensure shapes match
+        if input.shape != target.shape:
+            target = target.view_as(input)
+
+        # Compute margins: y * f(x)
+        margins = target * input
+
+        # Numerical stability (prevents Inf/NaN gradients)
+        margins = torch.clamp(margins, min=self.clamp_min, max=self.clamp_max)
+
+        # Loss
+        return torch.mean(torch.exp(-margins))
+
