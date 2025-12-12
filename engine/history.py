@@ -76,7 +76,7 @@ class TrainingHistory:
             result[str(key)] = self.get(key)
         return result
 
-    def to_cpu(self) -> 'TrainingHistory':
+    def copy_cpu(self) -> 'TrainingHistory':
         """
         Transfer data from GPU to CPU.
 

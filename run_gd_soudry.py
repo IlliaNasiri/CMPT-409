@@ -1,3 +1,14 @@
+# import ctypes.util
+# import os
+#
+# # NixOS compatibility fix: prevent ctypes from calling /sbin/ldconfig
+# if not os.path.exists('/sbin/ldconfig'):
+#     def _find_library_patched(name):
+#         # On NixOS, we rely on LD_LIBRARY_PATH being set correctly by the shell wrapper
+#         # so we just return the name and let dlopen find it.
+#         return name
+#     ctypes.util.find_library = _find_library_patched
+#
 from engine import (
     run_training,
     LinearModel,
@@ -20,11 +31,12 @@ import torch
 import os
 
 # Configure PyTorch to use all CPU cores
-torch.set_num_threads(os.cpu_count()//2)
+torch.set_num_threads(os.cpu_count() // 2)
 
 def main():
     # Use GPU if available
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    #device = "cpu"
     print(f"Using device: {device}")
 
     # Generate dataset

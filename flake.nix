@@ -36,7 +36,7 @@
             #########################################
             # Defines python dependencies
 
-            python3-pkgName = "python310";
+            python3-pkgName = "python312";
 
             f-python3-prodPkgs = (python-pkgs: (with python-pkgs; [
               matplotlib
@@ -66,6 +66,7 @@
               #cudatoolkit
               #nvidiaPackage
               #cudaPackages.cudnn
+
               libGLU
               libGL
               xorg.libXi
@@ -86,6 +87,7 @@
             f-nvidia-shellHook = (pkgs_: with pkgs_; ''
               export CMAKE_PREFIX_PATH="${pkgs_.fmt.dev}:$CMAKE_PREFIX_PATH"
               export PKG_CONFIG_PATH="${pkgs_.fmt.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
+              export EXTRA_CCFLAGS="-I/usr/include"
             '');
 
 

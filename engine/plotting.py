@@ -23,6 +23,14 @@ def plot_all(
     base_dir.mkdir(parents=True, exist_ok=True)
 
     # Save results as NPZ (flattened)
+    cpu_results = {}
+    for lr, d_opt in results.items():
+        for optimizer, history in d_opt.items():
+            if lr not in cpu_results:
+                cpu_results[lr] = {}
+            cpu_results[lr][optimizer] = history.copy_cpu()
+    results = cpu_results
+
     save_results_npz(results, learning_rates, optimizers, base_dir / "results.npz")
 
     # Get available metrics from first history
@@ -77,7 +85,7 @@ def plot_combined(results, learning_rates, optimizers, metric_keys, filepath):
         ax = axes[i]
         for opt in optimizers:
             history = results[lr][opt]
-            history.to_cpu()
+            history = history.copy_cpu()
             steps = history.get_steps()
 
             # Plot all keys for this metric (e.g., loss_train, loss_val, loss_test)
@@ -104,7 +112,7 @@ def plot_separate(results, learning_rates, optimizer, metric_keys, filepath):
 
     for lr in learning_rates:
         history = results[lr][optimizer]
-        history.to_cpu()
+        history = history.copy_cpu()
         steps = history.get_steps()
 
         for key in metric_keys:
