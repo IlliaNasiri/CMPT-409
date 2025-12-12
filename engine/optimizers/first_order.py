@@ -17,21 +17,30 @@ def step_gd(model, X, y, lr, loss_fn):
         lr: Learning rate
         loss_fn: Reusable loss function (ExponentialLoss instance)
     """
-    # Zero gradients
-    model.zero_grad()
-
-    # Forward pass
-    scores = model.forward(X)
-
-    # Compute loss and gradients
-    loss = loss_fn(scores, y)
-    loss.backward()
-
-    # Update parameters: w = w - lr * grad
-    with torch.no_grad():
-        for param in model.parameters():
-            if param.grad is not None:
-                param -= lr * param.grad
+    # Fast path for linear models: manual gradient computation
+    if hasattr(model, 'w') and len(list(model.parameters())) == 1:
+        # Linear model: f(x) = w^T x, loss = mean(exp(-y * w^T x))
+        # Gradient: dL/dw = -mean(y * x * exp(-y * w^T x), axis=0)
+        with torch.no_grad():
+            scores = torch.matmul(X, model.w)
+            margins = y * scores
+            # Clamp for numerical stability
+            margins_clamped = torch.clamp(margins, -50, 100)
+            # Compute gradient: -mean(y * X * exp(-margins))
+            exp_neg_margins = torch.exp(-margins_clamped)
+            grad = -torch.mean((y * exp_neg_margins).unsqueeze(1) * X, dim=0)
+            # Update: w = w - lr * grad
+            model.w -= lr * grad
+    else:
+        # General path: use autograd for multi-layer models
+        model.zero_grad()
+        scores = model.forward(X)
+        loss = loss_fn(scores, y)
+        loss.backward()
+        with torch.no_grad():
+            for param in model.parameters():
+                if param.grad is not None:
+                    param -= lr * param.grad
 
 
 def step_ngd_stable(model, X, y, lr, loss_fn):
