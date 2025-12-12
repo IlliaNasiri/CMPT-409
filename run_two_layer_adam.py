@@ -13,6 +13,13 @@ from engine import (
     exponential_loss,
     get_error_rate,
 )
+# Import the manual optimized factories
+from engine.optimizers.manual import (
+    ManualAdam, 
+    ManualAdaGrad, 
+    ManualSAMAdam, 
+    ManualSAMAdaGrad
+)
 from engine.optimizers import make_adaptive_optimizer, make_sam_optimizer
 from engine.plotting import plot_all
 import torch
@@ -69,10 +76,10 @@ def main():
     # Optimizer registry (FIXED: no LR in names, no duplicate declaration)
     # ----------------------------------------------------------
     optimizers = {
-        Optimizer.Adam: make_adaptive_optimizer(torch.optim.Adam, betas=(0.9, 0.999), eps=1e-8),
-        Optimizer.AdaGrad: make_adaptive_optimizer(torch.optim.Adagrad, eps=1e-8),
-        Optimizer.SAM_Adam: make_sam_optimizer(torch.optim.Adam, rho=0.05, betas=(0.9, 0.999), eps=1e-8),
-        Optimizer.SAM_AdaGrad: make_sam_optimizer(torch.optim.Adagrad, rho=0.05, eps=1e-8),
+        Optimizer.Adam: ManualAdam(betas=(0.9, 0.999), eps=1e-8),
+        Optimizer.AdaGrad: ManualAdaGrad(eps=1e-8),
+        Optimizer.SAM_Adam: ManualSAMAdam(rho=0.05, betas=(0.9, 0.999), eps=1e-8),
+        Optimizer.SAM_AdaGrad: ManualSAMAdaGrad(rho=0.05, eps=1e-8),
     }
 
     # ----------------------------------------------------------
