@@ -307,11 +307,23 @@ def plot_aggregated(
         split_prefix = f"{split_name} " if split_name else ""
         ax.set_title(f"{split_prefix}{key.metric.display_name} of {opt_name}")
         ax.set_xlabel("Steps")
-        ax.legend(fontsize=8)
 
     # Explicitly enable y-tick labels on all subplots
     for ax in axes:
         ax.tick_params(axis="y", which="both", labelleft=True)
+
+    # Create single legend at the bottom in landscape orientation
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            bbox_to_anchor=(0.5, -0.05),
+            ncol=min(len(labels), 6),
+            fontsize=8,
+            frameon=True,
+        )
 
     # Add figure title with split and repeat count
     # Determine number of repeats from first config
@@ -327,7 +339,7 @@ def plot_aggregated(
         y=0.995,
     )
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.05, 1, 1])  # Leave space for legend at bottom
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -358,9 +370,7 @@ def plot_combined(
     # Color map for different optimizers
     import colorsys
 
-    cmap = plt.get_cmap("tab10")
-
-    # Collect all optimizer names for consistent coloring
+    # Collect all optimizer names for consistent colormap assignment
     all_optimizer_names = sorted(
         set(
             config.optimizer.name
@@ -368,13 +378,50 @@ def plot_combined(
             for config in lr_configs
         )
     )
-    opt_colors = {opt: cmap(i % 10) for i, opt in enumerate(all_optimizer_names)}
+
+    # Assign different colormaps to each optimizer type for variety
+    colormap_names = ["Blues", "Oranges", "Greens", "Reds", "Purples", "YlOrBr", "PuBu", "RdPu"]
+    opt_colormaps = {
+        opt: plt.get_cmap(colormap_names[i % len(colormap_names)])
+        for i, opt in enumerate(all_optimizer_names)
+    }
 
     for i, lr in enumerate(learning_rates):
         ax = axes[i]
         strategy.configure_axis(ax, base_label=metric_keys[0].metric.name)
 
         configs = configs_by_lr.get(lr, [])
+
+        # Group configs by optimizer for color assignment
+        configs_by_opt: Dict[str, List[OptimizerConfig]] = {}
+        for config in configs:
+            opt_name = config.optimizer.name
+            if opt_name not in configs_by_opt:
+                configs_by_opt[opt_name] = []
+            configs_by_opt[opt_name].append(config)
+
+        # Assign colors to each config based on hyperparameters within optimizer type
+        config_colors: Dict[OptimizerConfig, Any] = {}
+        for opt_name, opt_configs in configs_by_opt.items():
+            cmap = opt_colormaps[opt_name]
+
+            if len(opt_configs) == 1:
+                # Single config for this optimizer, use mid-range color
+                config_colors[opt_configs[0]] = cmap(0.6)
+            else:
+                # Multiple configs, use hyperparameter score to assign colors
+                scores = [_compute_hyperparam_score(c) for c in opt_configs]
+                min_score = min(scores)
+                max_score = max(scores)
+
+                for config, score in zip(opt_configs, scores):
+                    if max_score == min_score:
+                        normalized = 0.6
+                    else:
+                        # Map to range [0.3, 0.9] to avoid too light/dark colors
+                        normalized = 0.3 + 0.6 * (score - min_score) / (max_score - min_score)
+                    config_colors[config] = cmap(normalized)
+
         for config in configs:
             entry = results[config]
             history = _get_history(entry)
@@ -385,8 +432,8 @@ def plot_combined(
             history_cpu = history.copy_cpu()
             steps = np.array(history_cpu.get_steps())
 
-            # Get base color for this optimizer
-            base_color = opt_colors[config.optimizer.name]
+            # Get assigned color for this config
+            base_color = config_colors[config]
             r, g, b = base_color[:3]
             h, s, v = colorsys.rgb_to_hsv(r, g, b)
 
@@ -749,20 +796,11 @@ def plot_hyperparam_grid(
     )
     show_split_styles = has_splits and is_loss_or_error
 
-    # Create legends
-    # 1. Optimizer legend (placed outside on right)
+    # Create legends at the top
+    # 1. Optimizer legend (horizontal at top)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    if handles:
-        fig.legend(
-            handles,
-            labels,
-            loc="center left",
-            bbox_to_anchor=(1.02, 0.5),
-            title="Optimizers",
-            fontsize=9,
-        )
 
-    # 2. Train/test legend (horizontal at top) if applicable
+    # 2. Train/test legend if applicable
     if show_split_styles:
         from matplotlib.lines import Line2D
 
@@ -785,11 +823,41 @@ def plot_hyperparam_grid(
                 label="Test (darker)",
             ),
         ]
+
+        # Combine train/test legend with optimizer legend
+        if handles:
+            # Add separator and optimizer labels
+            combined_elements = legend_elements + [Line2D([0], [0], color='none', label=' ')] + handles
+            combined_labels = ["Train (lighter)", "Test (darker)", " "] + labels
+
+            fig.legend(
+                combined_elements,
+                combined_labels,
+                loc="upper center",
+                bbox_to_anchor=(0.5, 0.99),
+                ncol=min(len(combined_elements), 5),
+                fontsize=9,
+                frameon=True,
+            )
+        else:
+            # Just train/test legend
+            fig.legend(
+                handles=legend_elements,
+                loc="upper center",
+                bbox_to_anchor=(0.5, 0.99),
+                ncol=2,
+                fontsize=9,
+                frameon=True,
+            )
+    elif handles:
+        # Just optimizer legend
         fig.legend(
-            handles=legend_elements,
+            handles,
+            labels,
             loc="upper center",
-            bbox_to_anchor=(0.5, 0.98),
-            ncol=2,
+            bbox_to_anchor=(0.5, 0.99),
+            ncol=min(len(labels), 5),
+            title="Optimizers",
             fontsize=9,
             frameon=True,
         )

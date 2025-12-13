@@ -50,10 +50,16 @@ def _compute_grads(
     y: torch.Tensor,
     clamp_min: float = CLAMP_MIN,
     clamp_max: float = CLAMP_MAX,
+    return_loss: bool = False,
 ):
     """
     Computes gradients manually for the linear TwoLayerModel: f(x) = W2 @ (W1 @ x)
-    Returns (W1_grad, W2_grad)
+
+    Args:
+        return_loss: If True, return (W1_grad, W2_grad, loss). If False, return (W1_grad, W2_grad).
+
+    Returns:
+        (W1_grad, W2_grad) if return_loss=False, else (W1_grad, W2_grad, loss)
     """
     # 1. Forward
     # Z = X @ W1.T  (N, k)
@@ -65,7 +71,8 @@ def _compute_grads(
     # dL/dS = -1/N * y * exp(-clamp(y*S))
     y = y.view(-1, 1)
     margins = torch.clamp(y * S, clamp_min, clamp_max)
-    coeffs = -torch.exp(-margins) * y
+    exp_neg_margins = torch.exp(-margins)
+    coeffs = -exp_neg_margins * y
     d_scores = coeffs / X.shape[0]
 
     # 3. Backward
@@ -78,7 +85,12 @@ def _compute_grads(
     # dL/dW1 = d_Z.T @ X        -> (k, N) @ (N, D) -> (k, D)
     W1_grad = torch.matmul(d_Z.T, X)
 
-    return W1_grad, W2_grad
+    if return_loss:
+        # Loss is mean of exp(-margins)
+        loss = exp_neg_margins.mean()
+        return W1_grad, W2_grad, loss
+    else:
+        return W1_grad, W2_grad
 
 
 # -----------------------------------------------------------------------------
@@ -316,7 +328,13 @@ class ManualTwolayerGD(OptimizerState):
 
 
 class ManualTwolayerNGD(OptimizerState):
-    """Normalized Gradient Descent for Linear TwoLayerModel."""
+    """Loss-Normalized Gradient Descent for Linear TwoLayerModel (per Nacson et al. Eq 11).
+
+    Update: W = W - lr * (grad / loss)
+
+    This effectively increases the step size as the loss decreases, counteracting
+    the vanishing gradients of exponential loss.
+    """
 
     def __init__(self, lr: float = 1e-1):
         self.default_lr = lr
@@ -329,18 +347,17 @@ class ManualTwolayerNGD(OptimizerState):
         W1, W2 = model.W1, model.W2
 
         with torch.no_grad():
-            # 1. Compute Gradients
-            g1, g2 = _compute_grads(W1, W2, X, y)
+            # 1. Compute Gradients and Loss
+            g1, g2, loss = _compute_grads(W1, W2, X, y, return_loss=True)
 
-            # 2. Compute Global Norm
-            # sqrt(||g1||^2 + ||g2||^2)
+            # 2. Compute Global Norm (for checking if gradient is non-zero)
             gnorm_sq = g1.norm() ** 2 + g2.norm() ** 2
             gnorm = torch.sqrt(gnorm_sq)  # type: ignore[arg-type]
 
-            # 3. NGD Update (Global)
+            # 3. Loss-Normalized GD Update
             if gnorm > GRAD_TOL:
-                # Effective step size for normalized update
-                scale = -lr / gnorm
+                # Normalize by loss instead of gradient norm
+                scale = -lr / loss
                 W1.add_(g1, alpha=scale)  # type: ignore[arg-type]
                 W2.add_(g2, alpha=scale)  # type: ignore[arg-type]
             # else: gradient is zero, no update
@@ -383,7 +400,11 @@ class ManualTwolayerSAM(OptimizerState):
 
 
 class ManualTwolayerSAM_NGD(OptimizerState):
-    """SAM + Normalized GD for Linear TwoLayerModel."""
+    """SAM + Loss-Normalized GD for Linear TwoLayerModel (per Nacson et al. Eq 11).
+
+    Performs SAM perturbation, then applies loss-normalized gradient descent
+    at the adversarial point: W = W - lr * (grad_adv / loss_adv)
+    """
 
     def __init__(self, lr: float = 1e-1, rho=0.05):
         self.default_lr = lr
@@ -410,13 +431,14 @@ class ManualTwolayerSAM_NGD(OptimizerState):
                 W1_adv = W1 + g1 * scale
                 W2_adv = W2 + g2 * scale
 
-                # 3. Compute Gradients at perturbed W_adv
-                g1_adv, g2_adv = _compute_grads(W1_adv, W2_adv, X, y)
+                # 3. Compute Gradients and Loss at perturbed W_adv
+                g1_adv, g2_adv, loss_adv = _compute_grads(W1_adv, W2_adv, X, y, return_loss=True)
 
-                # 4. NGD Update (Global Norm of ADV gradients)
+                # 4. Loss-Normalized GD Update
                 gnorm_adv = torch.sqrt(g1_adv.norm() ** 2 + g2_adv.norm() ** 2)  # type: ignore[arg-type]
 
                 if gnorm_adv > GRAD_TOL:
-                    update_scale = -lr / gnorm_adv
+                    # Normalize by loss instead of gradient norm
+                    update_scale = -lr / loss_adv
                     W1.add_(g1_adv, alpha=update_scale)  # type: ignore[arg-type]
                     W2.add_(g2_adv, alpha=update_scale)  # type: ignore[arg-type]
