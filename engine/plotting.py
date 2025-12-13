@@ -228,7 +228,7 @@ def plot_aggregated(
 
     opt_names = sorted(optimizer_types.keys())
     ncols = len(opt_names)
-    fig, axes = plt.subplots(1, ncols, figsize=(6 * ncols, 5), sharey=True)
+    fig, axes = plt.subplots(1, ncols, figsize=(6 * ncols, 5), sharey=True, constrained_layout=True)
     if ncols == 1:
         axes = [axes]
 
@@ -312,20 +312,7 @@ def plot_aggregated(
     for ax in axes:
         ax.tick_params(axis="y", which="both", labelleft=True)
 
-    # Create single legend at the bottom in landscape orientation
-    handles, labels = axes[0].get_legend_handles_labels()
-    if handles:
-        fig.legend(
-            handles,
-            labels,
-            loc="lower center",
-            bbox_to_anchor=(0.5, -0.05),
-            ncol=min(len(labels), 6),
-            fontsize=8,
-            frameon=True,
-        )
-
-    # Add figure title with split and repeat count
+    # Add figure title with split and repeat count BEFORE legend
     # Determine number of repeats from first config
     first_config = next(iter(results.keys()))
     first_entry = results[first_config]
@@ -336,10 +323,20 @@ def plot_aggregated(
     fig.suptitle(
         f"{split_prefix}{key.metric.display_name} Comparison for each Optimizer{repeat_text}",
         fontsize=13,
-        y=0.995,
     )
 
-    plt.tight_layout(rect=[0, 0.05, 1, 1])  # Leave space for legend at bottom
+    # Create single legend above the plots (after suptitle for proper spacing)
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="outside upper center",
+            ncol=min(len(labels), 6),
+            fontsize=8,
+            frameon=True,
+        )
+
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -356,7 +353,7 @@ def plot_combined(
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
     ncols = len(learning_rates)
-    fig, axes = plt.subplots(1, ncols, figsize=(5 * ncols, 4.5), sharey=True)
+    fig, axes = plt.subplots(1, ncols, figsize=(5 * ncols, 4.5), sharey=True, constrained_layout=True)
     if ncols == 1:
         axes = [axes]
 
@@ -500,26 +497,23 @@ def plot_combined(
     for ax in axes:
         ax.tick_params(axis="y", which="both", labelleft=True)
 
-    # Create single legend at the top
+    # Add figure title BEFORE legend for proper spacing
+    fig.suptitle(
+        f"{metric_keys[0].metric.display_name} for each Learning Rate",
+        fontsize=13,
+    )
+
+    # Create single legend at the top (after suptitle)
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(
         handles,
         labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.98),
+        loc="outside upper center",
         ncol=min(len(labels), 4),
         fontsize=8,
         frameon=True,
     )
 
-    # Add figure title
-    fig.suptitle(
-        f"{metric_keys[0].metric.display_name} for each Learning Rate",
-        fontsize=13,
-        y=1.02,
-    )
-
-    plt.tight_layout(rect=[0, 0, 1, 0.94])  # Leave space for legend at top
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -595,6 +589,7 @@ def plot_hyperparam_grid(
         sharex=True,
         sharey=True,
         squeeze=False,
+        constrained_layout=True,
     )
 
     # Color map for different optimizers
@@ -796,7 +791,13 @@ def plot_hyperparam_grid(
     )
     show_split_styles = has_splits and is_loss_or_error
 
-    # Create legends at the top
+    # Add figure title BEFORE legend for proper spacing
+    fig.suptitle(
+        f"{metric_keys[0].metric.display_name} Hyperparameter Grid (Rows=ρ, Cols=LR)",
+        fontsize=14,
+    )
+
+    # Create legends at the top (after suptitle)
     # 1. Optimizer legend (horizontal at top)
     handles, labels = axes[0, 0].get_legend_handles_labels()
 
@@ -833,8 +834,7 @@ def plot_hyperparam_grid(
             fig.legend(
                 combined_elements,
                 combined_labels,
-                loc="upper center",
-                bbox_to_anchor=(0.5, 0.99),
+                loc="outside upper center",
                 ncol=min(len(combined_elements), 5),
                 fontsize=9,
                 frameon=True,
@@ -843,8 +843,7 @@ def plot_hyperparam_grid(
             # Just train/test legend
             fig.legend(
                 handles=legend_elements,
-                loc="upper center",
-                bbox_to_anchor=(0.5, 0.99),
+                loc="outside upper center",
                 ncol=2,
                 fontsize=9,
                 frameon=True,
@@ -854,22 +853,13 @@ def plot_hyperparam_grid(
         fig.legend(
             handles,
             labels,
-            loc="upper center",
-            bbox_to_anchor=(0.5, 0.99),
+            loc="outside upper center",
             ncol=min(len(labels), 5),
             title="Optimizers",
             fontsize=9,
             frameon=True,
         )
 
-    # Add figure title
-    fig.suptitle(
-        f"{metric_keys[0].metric.display_name} Hyperparameter Grid (Rows=ρ, Cols=LR)",
-        fontsize=14,
-        y=0.998,
-    )
-
-    plt.tight_layout()
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
@@ -906,33 +896,15 @@ def plot_sam_comparison(
     nrows = len(optimizer_pairs)
     ncols = 2  # Base and SAM
 
-    # Create figure with extra space for legend on the right
-    fig = plt.figure(figsize=(8 * ncols + 2, 5 * nrows + 0.5))
-
-    # Create gridspec for subplots
-    import matplotlib.gridspec as gridspec
-
-    gs = gridspec.GridSpec(
+    # Create figure with constrained layout
+    fig, axes = plt.subplots(
         nrows,
         ncols,
-        hspace=0.3,
-        wspace=0.15,
-        top=0.92,  # Leave space at top for legend
-        bottom=0.08,
-        left=0.08,
-        right=0.75,  # Leave space on right for legend
+        figsize=(8 * ncols, 5 * nrows),
+        sharey='row',
+        constrained_layout=True,
+        squeeze=False,
     )
-
-    # Create axes with shared y-axis per row
-    axes = np.empty((nrows, ncols), dtype=object)
-    for i in range(nrows):
-        for j in range(ncols):
-            if j == 0:
-                # First column - no sharing
-                axes[i, j] = fig.add_subplot(gs[i, j])
-            else:
-                # Share y-axis with first column of same row
-                axes[i, j] = fig.add_subplot(gs[i, j], sharey=axes[i, 0])
 
     base_optimizers = sorted(optimizer_pairs.keys(), key=lambda x: x.name)
 
@@ -1136,23 +1108,23 @@ def plot_sam_comparison(
                     Line2D([0], [0], color=color, linewidth=3, label=f"  ρ={rho:.2g}")
                 )
 
-    if legend_elements:
-        fig.legend(
-            handles=legend_elements,
-            loc="center left",
-            bbox_to_anchor=(0.77, 0.5),
-            fontsize=9,
-            frameon=True,
-            fancybox=True,
-        )
-
-    # Add figure title
+    # Add figure title BEFORE legend for proper spacing
     split_note = " (Test Split)" if show_split_styles else ""
     fig.suptitle(
         f"{metric_keys[0].metric.display_name}: Base vs SAM Variants{split_note}",
         fontsize=14,
-        y=0.995,
     )
+
+    # Add legend at the top (after suptitle)
+    if legend_elements:
+        fig.legend(
+            handles=legend_elements,
+            loc="outside upper center",
+            ncol=min(len(legend_elements), 6),
+            fontsize=9,
+            frameon=True,
+            fancybox=True,
+        )
 
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
