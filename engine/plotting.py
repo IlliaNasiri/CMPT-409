@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Dict, List, Union, Optional, Any, Mapping
 from datetime import datetime
+from dataclasses import dataclass
 from .types import (
     OptimizerConfig,
     MetricKey,
@@ -16,6 +17,18 @@ from .strategies import PlotStrategy, PlotContext
 
 # Type alias for results - use Mapping for covariance
 ResultsType = Mapping[OptimizerConfig, Union[TrainingHistory, List[TrainingHistory]]]
+
+
+@dataclass
+class PlotTask:
+    """
+    Defines a specific plotting job.
+    Can represent a single split (e.g., Train Loss) or a mixed split (e.g., Combined Loss).
+    """
+    metric: Metric
+    keys: List[MetricKey]
+    filename_prefix: str    # e.g., "train_loss" or "loss"
+    display_title: str      # e.g., "Train Loss" or "Loss"
 
 
 def plot_all(
@@ -79,103 +92,124 @@ def plot_all(
         first_hist = first_entry
     metric_keys = first_hist.metric_keys
 
-    # Group metrics by type
-    metric_types: Dict[str, List[MetricKey]] = {}
+    # Group keys by Metric Enum
+    metric_groups: Dict[Metric, List[MetricKey]] = {}
     for key in metric_keys:
-        metric_name = str(key.metric.name.lower())
-        if metric_name not in metric_types:
-            metric_types[metric_name] = []
-        metric_types[metric_name].append(key)
+        if key.metric not in metric_groups:
+            metric_groups[key.metric] = []
+        metric_groups[key.metric].append(key)
 
     # Resolve strategy overrides
     overrides = strategy_overrides or {}
 
-    # Generate Plots
-    for metric_name, keys in metric_types.items():
-        metric = keys[0].metric
+    # Iterate Metrics and Generate Tasks
+    for metric, keys in metric_groups.items():
         strategy = overrides.get(metric, metric.strategy)
+        tasks: List[PlotTask] = []
 
-        if save_combined:
-            plot_combined(
-                results,
-                configs_by_lr,
-                learning_rates,
-                keys,
-                strategy,
-                base_dir / "combined" / f"{metric_name}.png",
-            )
+        # --- Task A: Combined / Mixed Split ---
+        # Contains ALL keys for this metric
+        tasks.append(PlotTask(
+            metric=metric,
+            keys=keys,
+            filename_prefix=metric.name.lower(),  # e.g. "loss"
+            display_title=metric.display_name    # e.g. "Loss"
+        ))
 
-        if save_separate:
-            for config in all_configs:
-                plot_separate(
-                    results,
-                    config,
-                    keys,
+        # --- Task B & C: Specific Splits (Loss metric only) ---
+        # Only create split-specific tasks for Loss metric
+        if metric == Metric.Loss:
+            # Group keys by DatasetSplit Enum
+            keys_by_split: Dict[DatasetSplit, List[MetricKey]] = {}
+            for key in keys:
+                if key.split:  # Handle keys that have a valid split
+                    if key.split not in keys_by_split:
+                        keys_by_split[key.split] = []
+                    keys_by_split[key.split].append(key)
+
+            # Create distinct tasks for each split found (Train, Test)
+            for split, split_keys in keys_by_split.items():
+                tasks.append(PlotTask(
+                    metric=metric,
+                    keys=split_keys,
+                    filename_prefix=f"{split.name.lower()}_{metric.name.lower()}",  # e.g. "train_loss"
+                    display_title=f"{split.name} {metric.display_name}"            # e.g. "Train Loss"
+                ))
+
+        # --- Dispatch Tasks to Plotters ---
+        for task in tasks:
+            # Helper to build consistent paths
+            def get_path(folder: str, suffix: str = "") -> Path:
+                return base_dir / folder / f"{task.filename_prefix}{suffix}.png"
+
+            if save_combined:
+                plot_combined(
+                    results, configs_by_lr, learning_rates,
+                    task,
                     strategy,
-                    base_dir / "separate" / config.dir_name / f"{metric_name}.png",
+                    get_path("combined")
                 )
 
-        if save_aggregated:
-            plot_aggregated(
-                results,
-                configs_by_lr,
-                learning_rates,
-                keys,
-                strategy,
-                base_dir / "aggregated" / f"{metric_name}_comparison.png",
-            )
+            if save_separate:
+                for config in all_configs:
+                    plot_separate(
+                        results, config,
+                        task,
+                        strategy,
+                        base_dir / "separate" / config.dir_name / f"{task.filename_prefix}.png"
+                    )
 
-    # Detect if we have hyperparameter sweeps (configs with rho)
-    has_rho_sweeps = any(
-        config.get(Hyperparam.Rho) is not None for config in all_configs
-    )
+            if save_aggregated:
+                plot_aggregated(
+                    results, configs_by_lr, learning_rates,
+                    task,
+                    strategy,
+                    get_path("aggregated", "_comparison")
+                )
 
-    if has_rho_sweeps:
-        # Extract unique rho and learning rate values
-        rho_values = sorted(
-            set(
-                config.get(Hyperparam.Rho)
-                for config in all_configs
-                if config.get(Hyperparam.Rho) is not None
-            )
-        )
-        learning_rates_for_grid = sorted(
-            set(
-                config.learning_rate
-                for config in all_configs
-                if config.get(Hyperparam.Rho) is not None
-            )
+        # Detect if we have hyperparameter sweeps (configs with rho)
+        has_rho_sweeps = any(
+            config.get(Hyperparam.Rho) is not None for config in all_configs
         )
 
-        # Generate hyperparameter grid plots for each metric
-        for metric_name, keys in metric_types.items():
-            metric = keys[0].metric
-            strategy = overrides.get(metric, metric.strategy)
-
-            plot_hyperparam_grid(
-                results,
-                learning_rates_for_grid,
-                rho_values,
-                keys,
-                strategy,
-                base_dir / "hyperparam_grid" / f"{metric_name}_grid.png",
+        if has_rho_sweeps:
+            # Extract unique rho and learning rate values
+            rho_values = sorted(
+                set(
+                    config.get(Hyperparam.Rho)
+                    for config in all_configs
+                    if config.get(Hyperparam.Rho) is not None
+                )
+            )
+            learning_rates_for_grid = sorted(
+                set(
+                    config.learning_rate
+                    for config in all_configs
+                    if config.get(Hyperparam.Rho) is not None
+                )
             )
 
-    # Detect if we have base/SAM optimizer pairs
-    optimizer_pairs = _identify_optimizer_pairs(results)
+            # Generate hyperparameter grid plots for each task
+            for task in tasks:
+                plot_hyperparam_grid(
+                    results, learning_rates_for_grid, rho_values,
+                    task,
+                    strategy,
+                    get_path("hyperparam_grid", "_grid")
+                )
 
-    if optimizer_pairs:
-        # Generate SAM comparison plots for each metric
-        for metric_name, keys in metric_types.items():
-            metric = keys[0].metric
-            strategy = overrides.get(metric, metric.strategy)
+        # Detect if we have base/SAM optimizer pairs
+        optimizer_pairs = _identify_optimizer_pairs(results)
 
-            plot_sam_comparison(
-                results,
-                keys,
-                strategy,
-                base_dir / "sam_comparison" / f"{metric_name}_sam_comparison.png",
-            )
+        if optimizer_pairs:
+            # Generate SAM comparison plots for each task
+            for task in tasks:
+                plot_sam_comparison(
+                    results,
+                    task,
+                    strategy,
+                    get_path("sam_comparison", "_sam_comparison")
+                )
 
 
 def _get_history(
@@ -200,20 +234,15 @@ def plot_aggregated(
     results: ResultsType,
     configs_by_lr: Mapping[float, List[OptimizerConfig]],
     learning_rates: List[float],
-    metric_keys: List[MetricKey],
+    task: PlotTask,
     strategy: PlotStrategy,
     filepath: Path,
 ) -> None:
     """Paper-style plotting: one subplot per optimizer type, colored by learning rate."""
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
-    # Filter to only Test split if available, otherwise use first available
-    test_keys = [k for k in metric_keys if k.split == DatasetSplit.Test]
-    if test_keys:
-        selected_keys = test_keys
-    else:
-        # Use reference metrics (no split) or whatever is available
-        selected_keys = metric_keys
+    # Use keys from the task
+    selected_keys = task.keys
 
     key = selected_keys[0]
     split_name = key.split.name if key.split else ""
@@ -345,13 +374,14 @@ def plot_combined(
     results: ResultsType,
     configs_by_lr: Mapping[float, List[OptimizerConfig]],
     learning_rates: List[float],
-    metric_keys: List[MetricKey],
+    task: PlotTask,
     strategy: PlotStrategy,
     filepath: Path,
 ) -> None:
     """Combined view: one subplot per learning rate, all optimizers overlaid."""
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
+    metric_keys = task.keys
     ncols = len(learning_rates)
     fig, axes = plt.subplots(1, ncols, figsize=(5 * ncols, 4.5), sharey=True, constrained_layout=True)
     if ncols == 1:
@@ -521,15 +551,16 @@ def plot_combined(
 def plot_separate(
     results: ResultsType,
     config: OptimizerConfig,
-    metric_keys: List[MetricKey],
+    task: PlotTask,
     strategy: PlotStrategy,
     filepath: Path,
 ) -> None:
     """Single optimizer config view."""
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
+    metric_keys = task.keys
     fig, ax = plt.subplots(figsize=(8, 6))
-    strategy.configure_axis(ax, base_label=metric_keys[0].metric.name)
+    strategy.configure_axis(ax, base_label=task.display_title)
 
     entry = results[config]
     histories = _get_histories(entry)
@@ -555,7 +586,7 @@ def plot_separate(
 
     # Add figure title
     fig.suptitle(
-        f"{metric_keys[0].metric.display_name}: {config.name}", fontsize=12, y=0.995
+        f"{task.display_title}: {config.name}", fontsize=12, y=0.995
     )
 
     plt.tight_layout()
@@ -567,7 +598,7 @@ def plot_hyperparam_grid(
     results: ResultsType,
     learning_rates: List[float],
     rho_values: List[float],
-    metric_keys: List[MetricKey],
+    task: PlotTask,
     strategy: PlotStrategy,
     filepath: Path,
 ) -> None:
@@ -578,6 +609,7 @@ def plot_hyperparam_grid(
     """
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
+    metric_keys = task.keys
     nrows = len(rho_values)
     ncols = len(learning_rates)
 
@@ -604,7 +636,7 @@ def plot_hyperparam_grid(
     for row_idx, rho in enumerate(rho_values):
         for col_idx, lr in enumerate(learning_rates):
             ax = axes[row_idx, col_idx]
-            strategy.configure_axis(ax, base_label=metric_keys[0].metric.name)
+            strategy.configure_axis(ax, base_label=task.display_title)
 
             # Find all configs with this lr and rho
             matching_configs = [
@@ -783,7 +815,7 @@ def plot_hyperparam_grid(
 
             # Y-labels for leftmost column (rho values)
             if col_idx == 0:
-                ax.set_ylabel(f"rho={rho}\n{metric_keys[0].metric.name}", fontsize=9)
+                ax.set_ylabel(f"rho={rho}\n{task.display_title}", fontsize=9)
 
             # X-labels for bottom row
             if row_idx == nrows - 1:
@@ -804,7 +836,7 @@ def plot_hyperparam_grid(
 
     # Add figure title BEFORE legend for proper spacing
     fig.suptitle(
-        f"{metric_keys[0].metric.display_name} Hyperparameter Grid (Rows=ρ, Cols=LR)",
+        f"{task.display_title} Hyperparameter Grid (Rows=ρ, Cols=LR)",
         fontsize=14,
     )
 
@@ -877,7 +909,7 @@ def plot_hyperparam_grid(
 
 def plot_sam_comparison(
     results: ResultsType,
-    metric_keys: List[MetricKey],
+    task: PlotTask,
     strategy: PlotStrategy,
     filepath: Path,
 ) -> None:
@@ -889,6 +921,8 @@ def plot_sam_comparison(
     Train/test differentiation for Loss/Error only.
     """
     filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    metric_keys = task.keys
 
     # Identify optimizer pairs
     optimizer_pairs = _identify_optimizer_pairs(results)
@@ -968,7 +1002,7 @@ def plot_sam_comparison(
 
         for col_idx, opt in enumerate([base_opt, sam_opt]):
             ax = axes[row_idx, col_idx]
-            strategy.configure_axis(ax, base_label=metric_keys[0].metric.name)
+            strategy.configure_axis(ax, base_label=task.display_title)
 
             # Get all configs for this optimizer
             opt_configs = [c for c in results.keys() if c.optimizer == opt]
@@ -994,12 +1028,10 @@ def plot_sam_comparison(
                 linewidth = 2.0
                 line_alpha = 0.6 if is_sam_variant else 0.9
 
-                # Only plot test split (or reference metrics without split)
+                # Plot all keys from the task
                 if show_split_styles:
-                    test_keys = [k for k in metric_keys if k.split == DatasetSplit.Test]
-
-                    # Plot test split only (solid lines)
-                    for key in test_keys:
+                    # Plot with respect to split styles (lighter for train, darker for test)
+                    for key in metric_keys:
                         all_values = []
                         steps = None
 
@@ -1120,9 +1152,8 @@ def plot_sam_comparison(
                 )
 
     # Add figure title BEFORE legend for proper spacing
-    split_note = " (Test Split)" if show_split_styles else ""
     fig.suptitle(
-        f"{metric_keys[0].metric.display_name}: Base vs SAM Variants{split_note}",
+        f"{task.display_title}: Base vs SAM Variants",
         fontsize=14,
     )
 
