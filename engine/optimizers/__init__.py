@@ -1,4 +1,10 @@
-from .first_order import step_gd, step_ngd_stable, step_sam_stable, step_sam_ngd_stable
+from .first_order import (
+    step_gd,
+    step_sgd,
+    step_ngd_stable,
+    step_sam_stable,
+    step_sam_ngd_stable,
+)
 from .adaptive import (
     Adam,
     AdaGrad,
@@ -28,6 +34,7 @@ from .base import (
 
 __all__ = [
     "step_gd",
+    "step_sgd",
     "step_ngd_stable",
     "step_sam_stable",
     "step_sam_ngd_stable",

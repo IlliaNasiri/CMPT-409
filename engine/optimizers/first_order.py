@@ -17,34 +17,34 @@ def _linear_grad_exponential(X, y, w, clamp_min=CLAMP_MIN, clamp_max=CLAMP_MAX):
     # 1. Compute Scores: (N, D) @ (D,) -> (N,)
     scores = X @ w
     y = y.view_as(scores)
-    
+
     # 2. Compute Scalar Term (the "weight" for each sample)
     margins = y * scores
     # In-place clamp is slightly faster if margins is not reused, but safety first
     margins_clamped = torch.clamp(margins, clamp_min, clamp_max)
-    
+
     # exp(-m)
     exp_neg_margins = torch.exp(-margins_clamped)
-    
+
     # scalar_term: y * exp(-m)
     # shape (N, 1)
     scalar_term = (y * exp_neg_margins).view(-1, 1)
-    
+
     # 3. Compute Gradient via Matrix Multiplication
     # Original: -mean(scalar_term * X, dim=0) -> Broadcsts to (N, D) (Memory Heavy)
     # Optimized: -1/N * (X.T @ scalar_term)   -> MatMul (Compute Dense, Tensor Cores)
     # X.T is (D, N), scalar_term is (N, 1) -> Result (D, 1)
-    
+
     N = X.shape[0]
     grad = torch.matmul(X.T, scalar_term)
-    grad.div_(-N) # In-place division
-    
+    grad.div_(-N)  # In-place division
+
     return grad.view_as(w)
 
 
 def step_gd(model, X, y, lr, loss_fn):
     """Gradient Descent step."""
-    if hasattr(model, 'w') and len(list(model.parameters())) == 1:
+    if hasattr(model, "w") and len(list(model.parameters())) == 1:
         with torch.no_grad():
             grad = _linear_grad_exponential(X, y, model.w)
             model.w -= lr * grad
@@ -59,14 +59,40 @@ def step_gd(model, X, y, lr, loss_fn):
                     param -= lr * param.grad
 
 
-def step_ngd_stable(model, X, y, lr, loss_fn, clamp_min=CLAMP_MIN, clamp_max=CLAMP_MAX, grad_tol=GRAD_TOL):
+def step_sgd(model, X, y, lr, loss_fn):
+    """Stochastic Gradient Descent step - classic SGD without momentum."""
+    if hasattr(model, "w") and len(list(model.parameters())) == 1:
+        with torch.no_grad():
+            grad = _linear_grad_exponential(X, y, model.w)
+            model.w -= lr * grad
+    else:
+        model.zero_grad()
+        scores = model.forward(X)
+        loss = loss_fn(scores, y)
+        loss.backward()
+        with torch.no_grad():
+            for param in model.parameters():
+                if param.grad is not None:
+                    param -= lr * param.grad
+
+
+def step_ngd_stable(
+    model,
+    X,
+    y,
+    lr,
+    loss_fn,
+    clamp_min=CLAMP_MIN,
+    clamp_max=CLAMP_MAX,
+    grad_tol=GRAD_TOL,
+):
     """
     Normalized Gradient Descent with numerical stability.
 
     Uses clamped gradient computation to prevent overflow, and a hard threshold
     check to preserve NGD's constant step-size property (avoiding EPS degradation).
     """
-    if hasattr(model, 'w') and len(list(model.parameters())) == 1:
+    if hasattr(model, "w") and len(list(model.parameters())) == 1:
         with torch.no_grad():
             grad = _linear_grad_exponential(X, y, model.w, clamp_min, clamp_max)
             grad_norm = grad.norm()
@@ -89,19 +115,31 @@ def step_ngd_stable(model, X, y, lr, loss_fn, clamp_min=CLAMP_MIN, clamp_max=CLA
                         param -= lr * (param.grad / grad_norm)
 
 
-def step_sam_stable(model, X, y, lr, loss_fn, rho=0.05, clamp_min=CLAMP_MIN, clamp_max=CLAMP_MAX, grad_tol=GRAD_TOL):
+def step_sam_stable(
+    model,
+    X,
+    y,
+    lr,
+    loss_fn,
+    rho=0.05,
+    clamp_min=CLAMP_MIN,
+    clamp_max=CLAMP_MAX,
+    grad_tol=GRAD_TOL,
+):
     """Sharpness-Aware Minimization (SAM) - Corrected."""
-    if hasattr(model, 'w') and len(list(model.parameters())) == 1:
+    if hasattr(model, "w") and len(list(model.parameters())) == 1:
         with torch.no_grad():
             # 1. Compute Gradient
             grad = _linear_grad_exponential(X, y, model.w, clamp_min, clamp_max)
             grad_norm = grad.norm()
 
             # 2. Compute Perturbation (Strictly enforcing norm = rho)
-            if grad_norm > grad_tol:  # Use a tiny threshold significantly smaller than EPS
+            if (
+                grad_norm > grad_tol
+            ):  # Use a tiny threshold significantly smaller than EPS
                 eps = (rho / grad_norm) * grad
             else:
-                eps = torch.zeros_like(grad) # Or random direction if preferred
+                eps = torch.zeros_like(grad)  # Or random direction if preferred
 
             # 3. Adversarial Step
             w_adv = model.w + eps
@@ -120,7 +158,7 @@ def step_sam_stable(model, X, y, lr, loss_fn, rho=0.05, clamp_min=CLAMP_MIN, cla
         params_with_grad = [p for p in model.parameters() if p.grad is not None]
         if not params_with_grad:
             return
-            
+
         grads = [p.grad for p in params_with_grad]
 
         with torch.no_grad():
@@ -160,11 +198,21 @@ def step_sam_stable(model, X, y, lr, loss_fn, rho=0.05, clamp_min=CLAMP_MIN, cla
             torch._foreach_add_(params_with_grad, grads_adv, alpha=-lr)
 
 
-def step_sam_ngd_stable(model, X, y, lr, loss_fn, rho=0.05, clamp_min=CLAMP_MIN, clamp_max=CLAMP_MAX, grad_tol=GRAD_TOL):
+def step_sam_ngd_stable(
+    model,
+    X,
+    y,
+    lr,
+    loss_fn,
+    rho=0.05,
+    clamp_min=CLAMP_MIN,
+    clamp_max=CLAMP_MAX,
+    grad_tol=GRAD_TOL,
+):
     """
     SAM + Normalized GD with numerical stability.
     """
-    if hasattr(model, 'w') and len(list(model.parameters())) == 1:
+    if hasattr(model, "w") and len(list(model.parameters())) == 1:
         with torch.no_grad():
             # 1. SAM perturbation
             # Use the clamped helper to prevent overflow in exp()
@@ -190,7 +238,7 @@ def step_sam_ngd_stable(model, X, y, lr, loss_fn, rho=0.05, clamp_min=CLAMP_MIN,
                 pass
     else:
         # 1. Compute Gradients at current w
-        model.zero_grad(set_to_none=True) # Slightly faster than zeroing tensors
+        model.zero_grad(set_to_none=True)  # Slightly faster than zeroing tensors
         scores = model.forward(X)
         loss = loss_fn(scores, y)
         loss.backward()
@@ -223,19 +271,21 @@ def step_sam_ngd_stable(model, X, y, lr, loss_fn, rho=0.05, clamp_min=CLAMP_MIN,
         scores_adv = model.forward(X)
         loss_adv = loss_fn(scores_adv, y)
         loss_adv.backward()
-        
+
         # Refresh grads list (in case graph changed, though unlikely)
         grads_adv = [p.grad for p in params_with_grad]
 
         with torch.no_grad():
             # --- GLOBAL ADV NORM (Optimized) ---
             per_tensor_norms_adv = torch._foreach_norm(grads_adv, 2)
-            global_adv_norm = torch.linalg.vector_norm(torch.stack(per_tensor_norms_adv))
-            
+            global_adv_norm = torch.linalg.vector_norm(
+                torch.stack(per_tensor_norms_adv)
+            )
+
             # 4. NGD Update & Restore
-            
+
             # Restore weights first: p.copy_(p_orig)
-            # There is no direct foreach_copy, but we can do it manually or 
+            # There is no direct foreach_copy, but we can do it manually or
             # if we are clever, we can calculate the net update vector.
             # But standard restore is safer.
             for p, p_orig in zip(params_with_grad, original_params):
@@ -245,4 +295,3 @@ def step_sam_ngd_stable(model, X, y, lr, loss_fn, rho=0.05, clamp_min=CLAMP_MIN,
                 update_scale = -lr / global_adv_norm
                 # Fused update: p = p - (lr/norm) * g_adv
                 torch._foreach_add_(params_with_grad, grads_adv, alpha=update_scale)
-

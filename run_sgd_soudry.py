@@ -23,7 +23,7 @@ from engine import (
 )
 
 from engine.optimizers import (
-    step_gd,
+    step_sgd,
     step_ngd_stable,
     step_sam_stable,
     step_sam_ngd_stable,
@@ -65,7 +65,7 @@ def main():
 
     # === Optimizer factories ===
     optimizer_factories = {
-        Optimizer.GD: make_optimizer_factory(step_gd),
+        Optimizer.GD: make_optimizer_factory(step_sgd),
         Optimizer.NGD: make_optimizer_factory(step_ngd_stable),
         Optimizer.SAM: make_optimizer_factory(step_sam_stable),
         Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable),

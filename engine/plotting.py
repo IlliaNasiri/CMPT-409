@@ -901,12 +901,12 @@ def plot_sam_comparison(
         s = 0.7  # Fixed saturation for vividness
 
         # Map rho to value (lightness): low rho = lighter, high rho = darker
-        if rho is not None and all_rhos and len(all_rhos) > 1:
+        if rho is not None and rho != 0.0 and all_rhos and len(all_rhos) > 1:
             rho_idx = all_rhos.index(rho)
             # Use range [0.4, 0.9] to avoid too dark or too light
             v = 0.9 - 0.5 * (rho_idx / max(1, len(all_rhos) - 1))
         else:
-            # For non-SAM optimizers (no rho), use full brightness
+            # For non-SAM optimizers (no rho or rho=0.0), use full brightness
             v = 0.9
 
         r, g, b = colorsys.hsv_to_rgb(h, s, v)
@@ -936,7 +936,7 @@ def plot_sam_comparison(
                     continue
 
                 lr = config.learning_rate
-                rho = config.get(Hyperparam.Rho, None)
+                rho = config.get(Hyperparam.Rho, 0.0)
 
                 # Get color based on LR (hue) and rho (lightness)
                 color = get_color_for_config(lr, rho)
