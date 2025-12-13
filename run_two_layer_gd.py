@@ -13,7 +13,7 @@ from engine import (
     exponential_loss,
     get_error_rate,
 )
-from engine.optimizers import step_gd, step_ngd_stable, step_sam_stable, step_sam_ngd_stable
+from engine.optimizers import ManualGD, ManualNGD, ManualSAM, ManualSAM_NGD
 from engine.optimizers.base import make_optimizer
 from engine.plotting import plot_all
 import torch
@@ -66,10 +66,10 @@ def main():
     # Register optimizers with enum keys
     # ----------------------------------------------------------
     optimizers = {
-        Optimizer.GD: make_optimizer(step_gd),
-        Optimizer.NGD: make_optimizer(step_ngd_stable),
-        Optimizer.SAM: make_optimizer(step_sam_stable),
-        Optimizer.SAM_NGD: make_optimizer(step_sam_ngd_stable),
+        Optimizer.GD: ManualGD(),
+        Optimizer.NGD: ManualNGD(),
+        Optimizer.SAM: ManualSAM(),
+        Optimizer.SAM_NGD: ManualSAM_NGD(),
     }
 
     # ----------------------------------------------------------

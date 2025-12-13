@@ -263,6 +263,7 @@ class ManualTwolayerSAM_AdaGrad(OptimizerState):
                 # W2
                 s['sum_sq2'].addcmul_(g2_adv, g2_adv)
                 std2 = s['sum_sq2'].sqrt().add_(self.eps)
+                W2.addcdiv_(g2_adv, std2, value=-lr)
 
 
 class ManualTwolayerGD(OptimizerState):
@@ -335,17 +336,17 @@ class ManualTwolayerSAM(OptimizerState):
 
             # 2. SAM Perturbation (Global Norm)
             gnorm = torch.sqrt(g1.norm()**2 + g2.norm()**2)
-            
+
             if gnorm > GRAD_TOL:
                 scale = self.rho / gnorm
-                
+
                 # Perturb weights
                 W1_adv = W1 + g1 * scale
                 W2_adv = W2 + g2 * scale
-                
+
                 # 3. Compute Gradients at perturbed W_adv
                 g1_adv, g2_adv = _compute_grads(W1_adv, W2_adv, X, y)
-                
+
                 # 4. Standard GD Update on ORIGINAL weights using ADV gradients
                 W1.add_(g1_adv, alpha=-lr)
                 W2.add_(g2_adv, alpha=-lr)
@@ -370,21 +371,21 @@ class ManualTwolayerSAM_NGD(OptimizerState):
 
             # 2. SAM Perturbation (Global Norm)
             gnorm = torch.sqrt(g1.norm()**2 + g2.norm()**2)
-            
+
             if gnorm > GRAD_TOL:
                 scale = self.rho / gnorm
-                
+
                 # Perturb weights
                 W1_adv = W1 + g1 * scale
                 W2_adv = W2 + g2 * scale
-                
+
                 # 3. Compute Gradients at perturbed W_adv
                 g1_adv, g2_adv = _compute_grads(W1_adv, W2_adv, X, y)
-                
+
                 # 4. NGD Update (Global Norm of ADV gradients)
                 gnorm_adv = torch.sqrt(g1_adv.norm()**2 + g2_adv.norm()**2)
-                
+
                 if gnorm_adv > GRAD_TOL:
                     update_scale = -lr / gnorm_adv
                     W1.add_(g1_adv, alpha=update_scale)
-                    W2.add_(g2_adv, alpha=update_scale)               W2.addcdiv_(g2_adv, std2, value=-lr)
+                    W2.add_(g2_adv, alpha=update_scale)
