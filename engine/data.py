@@ -7,7 +7,7 @@ from typing import Dict, Tuple, Optional
 def make_soudry_dataset(
     n: int = 200,
     d: int = 5000,
-    margin: float = 0.1,
+    margin: float = 1,
     sigma: float = 0.3,
     device: str = "cpu",
     rng: Optional[np.random.Generator] = None,
@@ -65,8 +65,8 @@ def split_train_test(
 
     n = X.shape[0]
     if isinstance(test_size, float):
-        assert not np.isclose(0.0, test_size) and np.isclose(1.0, test_size), (
-            f"Expected: test_size must be in range 0.0 <= test_size <= 1.0, got: test_size is {test_size}"
+        assert not np.isclose(0.0, test_size) and not np.isclose(1.0, test_size), (
+            f"Expected: test_size must be in range 0.0 < test_size < 1.0, got: test_size is {test_size}"
         )
         n_test = int(n * test_size)
     elif isinstance(test_size, int):

@@ -131,9 +131,7 @@ class PlotStrategy:
             ax.set_ylim(*self.y_lim)
 
         # Ensure y-axis tick labels are visible on all subplots (for sharey=True)
-        # Only show labels on major ticks to avoid clutter (especially for log scales)
-        ax.tick_params(axis="y", which="major", labelleft=True)
-        ax.tick_params(axis="y", which="minor", labelleft=False)
+        ax.tick_params(axis="y", which="both", left=True, labelleft=True)
 
         ax.grid(True, which="major", alpha=0.3)
         if self.x_scale == AxisScale.Log or self.y_scale == AxisScale.Log:

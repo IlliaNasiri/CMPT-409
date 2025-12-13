@@ -1,10 +1,10 @@
 from .first_order import step_gd, step_ngd_stable, step_sam_stable, step_sam_ngd_stable
-# from .adaptive import (
-#     Adam,
-#     AdaGrad,
-#     SAM_Adam,
-#     SAM_AdaGrad,
-# )
+from .adaptive import (
+    Adam,
+    AdaGrad,
+    SAM_Adam,
+    SAM_AdaGrad,
+)
 
 from .manual import (
     ManualAdam,
@@ -37,10 +37,10 @@ __all__ = [
     "StatelessOptimizer",
     "StatefulOptimizer",
     "SAMOptimizer",
-    # "Adam",
-    # "AdaGrad",
-    # "SAM_Adam",
-    # "SAM_AdaGrad",
+    "Adam",
+    "AdaGrad",
+    "SAM_Adam",
+    "SAM_AdaGrad",
     "ManualAdam",
     "ManualAdaGrad",
     "ManualSAM_Adam",

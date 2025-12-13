@@ -95,7 +95,8 @@ class StatefulOptimizer(OptimizerState):
 class SAMOptimizer(OptimizerState):
     """
     Sharpness-Aware Minimization wrapper for PyTorch optimizers.
-    Performs SAM's double forward/backward pass.
+    Performs SAM's double forward/backward pass with global norm calculation.
+    Matches the numerical stability and optimization of first_order.py and manual.py.
     """
 
     def __init__(
@@ -118,28 +119,39 @@ class SAMOptimizer(OptimizerState):
         loss = self.loss_fn(scores, y)
         loss.backward()
 
-        # 3. Compute perturbation and save current parameters
-        original_params = []
-        with torch.no_grad():
-            for p in model.parameters():
-                original_params.append(p.clone())
-                if p.grad is not None:
-                    grad_norm = (
-                        p.grad.norm() + 1e-12
-                    )  # Keep as Tensor for GPU efficiency
-                    p.add_(p.grad, alpha=self.rho / grad_norm)  # type: ignore[arg-type]
+        # Gather params with gradients
+        params_with_grad = [p for p in model.parameters() if p.grad is not None]
+        if not params_with_grad:
+            return
 
-        # 4. Second forward/backward at perturbed point
+        grads = [p.grad for p in params_with_grad]
+
+        with torch.no_grad():
+            # 3. Compute GLOBAL norm across all parameters (like first_order.py and manual.py)
+            per_tensor_norms = torch._foreach_norm(grads, 2)
+            global_norm = torch.linalg.vector_norm(torch.stack(per_tensor_norms))
+
+            # Save original parameters
+            original_params = [p.clone() for p in params_with_grad]
+
+            # 4. SAM Perturbation using global norm and GRAD_TOL
+            if global_norm > GRAD_TOL:
+                scale = self.rho / global_norm
+                # Perturb all parameters: p = p + (rho/||g||) * g
+                torch._foreach_add_(params_with_grad, grads, alpha=scale)
+
+        # 5. Second forward/backward at perturbed point
         self.optimizer.zero_grad()
         scores_adv = model.forward(X)
         loss_adv = self.loss_fn(scores_adv, y)
         loss_adv.backward()
 
-        # 5. Restore original parameters and apply update
+        # 6. Restore original parameters
         with torch.no_grad():
-            for p, p_orig in zip(model.parameters(), original_params):
+            for p, p_orig in zip(params_with_grad, original_params):
                 p.copy_(p_orig)
 
+        # 7. Apply optimizer update using adversarial gradients
         self.optimizer.step()
 
     def reset(self):
@@ -151,10 +163,10 @@ class ExponentialLoss(nn.Module):
     Computes the mean exponential loss: mean(exp(-y * y_pred))
     """
 
-    def __init__(self, clamp_min=-50, clamp_max=100):
+    def __init__(self, clamp_min=CLAMP_MIN, clamp_max=CLAMP_MAX):
         super().__init__()
         # Clamping is essential because exp() grows excessively fast.
-        # exp(100) is ~2e43, which is safe in float64 but huge.
+        # Using the same clamp values as first_order.py and manual.py for consistency
         self.clamp_min = clamp_min
         self.clamp_max = clamp_max
 

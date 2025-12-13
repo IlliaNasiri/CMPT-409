@@ -21,6 +21,7 @@ from engine import (
     get_direction_distance,
     expand_sweep_grid,
 )
+
 from engine.optimizers import (
     step_gd,
     step_ngd_stable,
@@ -93,10 +94,6 @@ def main():
 
     # Expand to concrete configurations
     optimizer_configs = expand_sweep_grid(optimizer_factories, sweeps)
-
-    print(f"Running {len(optimizer_configs)} optimizer configurations:")
-    for config in optimizer_configs:
-        print(f"  - {config.name}")
 
     # === Training ===
     results = run_training(

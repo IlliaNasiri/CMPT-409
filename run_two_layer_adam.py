@@ -7,20 +7,21 @@ from engine import (
     DatasetSplit,
     Metric,
     Optimizer,
+    OptimizerConfig,
+    Hyperparam,
     MetricsCollector,
     split_train_test,
     make_soudry_dataset,
     exponential_loss,
     get_error_rate,
+    expand_sweep_grid,
 )
-# Import the manual optimized factories
 from engine.optimizers.manual import (
-    ManualAdam, 
-    ManualAdaGrad, 
-    ManualSAM_Adam, 
+    ManualAdam,
+    ManualAdaGrad,
+    ManualSAM_Adam,
     ManualSAM_AdaGrad
 )
-from engine.optimizers import make_adaptive_optimizer, make_sam_optimizer
 from engine.plotting import plot_all
 import torch
 import os
@@ -67,20 +68,41 @@ def main():
         )
 
     # ----------------------------------------------------------
-    # Learning rates
+    # Optimizer factories
     # ----------------------------------------------------------
-    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
-    total_iters = 10_000
+    optimizer_factories = {
+        Optimizer.Adam: ManualAdam,
+        Optimizer.AdaGrad: ManualAdaGrad,
+        Optimizer.SAM_Adam: ManualSAM_Adam,
+        Optimizer.SAM_AdaGrad: ManualSAM_AdaGrad,
+    }
 
     # ----------------------------------------------------------
-    # Optimizer registry (FIXED: no LR in names, no duplicate declaration)
+    # Hyperparameter sweeps
     # ----------------------------------------------------------
-    optimizers = {
-        Optimizer.Adam: ManualAdam(betas=(0.9, 0.999), eps=1e-8),
-        Optimizer.AdaGrad: ManualAdaGrad(eps=1e-8),
-        Optimizer.SAM_Adam: ManualSAM_Adam(rho=0.05, betas=(0.9, 0.999), eps=1e-8),
-        Optimizer.SAM_AdaGrad: ManualSAM_AdaGrad(rho=0.05, eps=1e-8),
+    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
+    rho_values = [0.05]
+    total_iters = 10_000
+
+    sweeps = {
+        Optimizer.Adam: {
+            Hyperparam.LearningRate: learning_rates,
+        },
+        Optimizer.AdaGrad: {
+            Hyperparam.LearningRate: learning_rates,
+        },
+        Optimizer.SAM_Adam: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: rho_values,
+        },
+        Optimizer.SAM_AdaGrad: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: rho_values,
+        },
     }
+
+    # Expand to concrete configurations
+    optimizer_configs = expand_sweep_grid(optimizer_factories, sweeps)
 
     # ----------------------------------------------------------
     # Run training
@@ -88,8 +110,7 @@ def main():
     results = run_training(
         datasets=datasets,
         model_factory=model_factory,
-        optimizers=optimizers,
-        learning_rates=learning_rates,
+        optimizers=optimizer_configs,
         metrics_collector_factory=metrics_factory,
         train_split=DatasetSplit.Train,
         total_iters=total_iters,
@@ -101,8 +122,6 @@ def main():
     # ----------------------------------------------------------
     plot_all(
         results,
-        learning_rates,
-        list(optimizers.keys()),
         experiment_name="2layers_adam_family"
     )
 

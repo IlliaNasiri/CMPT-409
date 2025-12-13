@@ -10,6 +10,55 @@ from .metrics import MetricsCollector
 from .history import TrainingHistory
 
 
+def _print_optimizer_configs(
+    optimizers: Dict[OptimizerConfig, Callable[[], OptimizerState]],
+) -> None:
+    """
+    Print optimizer configurations in a condensed format.
+
+    Groups by optimizer type and shows learning rates and other hyperparameters as arrays.
+
+    Args:
+        optimizers: Dictionary of OptimizerConfig to factory callables
+    """
+    # Group configs by optimizer type
+    grouped: Dict[str, List[OptimizerConfig]] = {}
+    for config in optimizers.keys():
+        opt_name = config.optimizer.name
+        if opt_name not in grouped:
+            grouped[opt_name] = []
+        grouped[opt_name].append(config)
+
+    print(f"Running {len(optimizers)} optimizer configurations:")
+
+    for optimizer_name in sorted(grouped.keys()):
+        opt_configs = grouped[optimizer_name]
+
+        # Extract unique learning rates
+        lrs = sorted(set(config.learning_rate for config in opt_configs))
+
+        # Check if there are other hyperparameters (besides learning rate)
+        other_params = set()
+        for config in opt_configs:
+            for hp, _ in config.hyperparams:
+                if hp != Hyperparam.LearningRate:
+                    other_params.add(hp)
+
+        # Build the display string
+        parts = [f"lr=[{', '.join(str(lr) for lr in lrs)}]"]
+
+        # Add other hyperparameters if present
+        for param in sorted(other_params, key=lambda x: x.value):
+            values = sorted(
+                v
+                for v in {config.get(param) for config in opt_configs}
+                if v is not None
+            )
+            parts.append(f"{param.value}=[{', '.join(str(v) for v in values)}]")
+
+        print(f"  - {optimizer_name}: {', '.join(parts)} ({len(opt_configs)} configs)")
+
+
 def _compute_log_spaced_record_points(
     total_iters: int, num_points: int = 200
 ) -> List[int]:
@@ -58,6 +107,10 @@ def run_training(
     Returns:
         results[config] = TrainingHistory (flat dict keyed by OptimizerConfig)
     """
+    # Print optimizer configurations in condensed format
+    if debug:
+        _print_optimizer_configs(optimizers)
+
     # Validate mode parameters
     full_batch_mode = total_iters is not None
     mini_batch_mode = batch_size is not None

@@ -4,6 +4,8 @@ from engine import (
     DatasetSplit,
     Metric,
     Optimizer,
+    OptimizerConfig,
+    Hyperparam,
     MetricsCollector,
     split_train_test,
     make_soudry_dataset,
@@ -12,12 +14,12 @@ from engine import (
     get_error_rate,
     get_angle,
     get_direction_distance,
+    expand_sweep_grid,
 )
-# Import the manual optimized factories
 from engine.optimizers.manual import (
-    ManualAdam, 
-    ManualAdaGrad, 
-    ManualSAM_Adam, 
+    ManualAdam,
+    ManualAdaGrad,
+    ManualSAM_Adam,
     ManualSAM_AdaGrad
 )
 from engine.plotting import plot_all
@@ -57,23 +59,44 @@ def main():
             w_star=w_star
         )
 
-    # Optimizers
+    # Optimizer factories
     # Using the fused manual implementations for ~2x speedup on small models
-    optimizers = {
-        Optimizer.Adam: ManualAdam(betas=(0.9, 0.999), eps=1e-8),
-        Optimizer.AdaGrad: ManualAdaGrad(eps=1e-8),
-        Optimizer.SAM_Adam: ManualSAM_Adam(rho=0.05, betas=(0.9, 0.999), eps=1e-8),
-        Optimizer.SAM_AdaGrad: ManualSAM_AdaGrad(rho=0.05, eps=1e-8),
+    optimizer_factories = {
+        Optimizer.Adam: ManualAdam,
+        Optimizer.AdaGrad: ManualAdaGrad,
+        Optimizer.SAM_Adam: ManualSAM_Adam,
+        Optimizer.SAM_AdaGrad: ManualSAM_AdaGrad,
     }
 
-    # Run training
+    # Hyperparameter sweeps
     learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
-    
+    rho_values = [0.05]
+
+    sweeps = {
+        Optimizer.Adam: {
+            Hyperparam.LearningRate: learning_rates,
+        },
+        Optimizer.AdaGrad: {
+            Hyperparam.LearningRate: learning_rates,
+        },
+        Optimizer.SAM_Adam: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: rho_values,
+        },
+        Optimizer.SAM_AdaGrad: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: rho_values,
+        },
+    }
+
+    # Expand to concrete configurations
+    optimizer_configs = expand_sweep_grid(optimizer_factories, sweeps)
+
+    # Run training
     results = run_training(
         datasets=datasets,
         model_factory=model_factory,
-        optimizers=optimizers,
-        learning_rates=learning_rates,
+        optimizers=optimizer_configs,
         metrics_collector_factory=metrics_factory,
         train_split=DatasetSplit.Train,
         total_iters=100_000,
@@ -83,8 +106,6 @@ def main():
     # Plotting
     plot_all(
         results,
-        learning_rates,
-        list(optimizers.keys()),
         experiment_name="2layers_adam_family_testing"
     )
 

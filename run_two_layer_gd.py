@@ -7,14 +7,16 @@ from engine import (
     DatasetSplit,
     Metric,
     Optimizer,
+    OptimizerConfig,
+    Hyperparam,
     MetricsCollector,
     split_train_test,
     make_soudry_dataset,
     exponential_loss,
     get_error_rate,
+    expand_sweep_grid,
 )
-from engine.optimizers import ManualGD, ManualNGD, ManualSAM, ManualSAM_NGD
-from engine.optimizers.base import make_optimizer
+from engine.optimizers.manual import ManualGD, ManualNGD, ManualSAM, ManualSAM_NGD
 from engine.plotting import plot_all
 import torch
 import os
@@ -57,20 +59,41 @@ def main():
         )
 
     # ----------------------------------------------------------
-    # Learning rate sweep
+    # Optimizer factories
     # ----------------------------------------------------------
-    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
-    total_iters = 10_000
+    optimizer_factories = {
+        Optimizer.GD: ManualGD,
+        Optimizer.NGD: ManualNGD,
+        Optimizer.SAM: ManualSAM,
+        Optimizer.SAM_NGD: ManualSAM_NGD,
+    }
 
     # ----------------------------------------------------------
-    # Register optimizers with enum keys
+    # Hyperparameter sweeps
     # ----------------------------------------------------------
-    optimizers = {
-        Optimizer.GD: ManualGD(),
-        Optimizer.NGD: ManualNGD(),
-        Optimizer.SAM: ManualSAM(),
-        Optimizer.SAM_NGD: ManualSAM_NGD(),
+    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
+    rho_values = [0.05]
+    total_iters = 10_000
+
+    sweeps = {
+        Optimizer.GD: {
+            Hyperparam.LearningRate: learning_rates,
+        },
+        Optimizer.NGD: {
+            Hyperparam.LearningRate: learning_rates,
+        },
+        Optimizer.SAM: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: rho_values,
+        },
+        Optimizer.SAM_NGD: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: rho_values,
+        },
     }
+
+    # Expand to concrete configurations
+    optimizer_configs = expand_sweep_grid(optimizer_factories, sweeps)
 
     # ----------------------------------------------------------
     # Training
@@ -78,8 +101,7 @@ def main():
     results = run_training(
         datasets=datasets,
         model_factory=model_factory,
-        optimizers=optimizers,
-        learning_rates=learning_rates,
+        optimizers=optimizer_configs,
         metrics_collector_factory=metrics_factory,
         train_split=DatasetSplit.Train,
         total_iters=total_iters,
@@ -91,8 +113,6 @@ def main():
     # ----------------------------------------------------------
     plot_all(
         results,
-        learning_rates,
-        list(optimizers.keys()),
         experiment_name="2layers_gd_family"
     )
 
