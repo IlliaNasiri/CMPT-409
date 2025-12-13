@@ -54,11 +54,17 @@ def main():
     def model_factory():
         return LinearModel(input_dim, device=device)
 
+    # === Loss function (configurable) ===
+    # Choose which loss function to use
+    # loss_fn = ExponentialLoss()  # Uncomment for default exponential loss
+    loss_fn = LogisticLoss()  # Using LogisticLoss as example
+
     # === Metrics factory ===
+    # Pass the loss function so metrics use the same loss as optimizers
     def metrics_factory(model):
         return MetricsCollector(
             metric_fns={
-                Metric.Loss: exponential_loss,
+                Metric.Loss: loss_fn,  # Use configured loss function for metrics
                 Metric.Error: get_error_rate,
                 Metric.Angle: get_angle,
                 Metric.Distance: get_direction_distance,
@@ -67,21 +73,12 @@ def main():
         )
 
     # === Optimizer factories ===
-    # Example 1: Default exponential loss (ExponentialLoss is used by default)
-    # optimizer_factories = {
-    #     Optimizer.GD: make_optimizer_factory(step_sgd),
-    #     Optimizer.NGD: make_optimizer_factory(step_ngd_stable),
-    #     Optimizer.SAM: make_optimizer_factory(step_sam_stable),
-    #     Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable),
-    # }
-
-    # Example 2: Use custom loss function (uncomment to demonstrate LogisticLoss)
-    logistic_loss = LogisticLoss()
+    # All optimizers use the same configured loss function
     optimizer_factories = {
-        Optimizer.GD: make_optimizer_factory(step_sgd, loss=logistic_loss),
-        Optimizer.NGD: make_optimizer_factory(step_ngd_stable, loss=logistic_loss),
-        Optimizer.SAM: make_optimizer_factory(step_sam_stable, loss=logistic_loss),
-        Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable, loss=logistic_loss),
+        Optimizer.GD: make_optimizer_factory(step_sgd, loss=loss_fn),
+        Optimizer.NGD: make_optimizer_factory(step_ngd_stable, loss=loss_fn),
+        Optimizer.SAM: make_optimizer_factory(step_sam_stable, loss=loss_fn),
+        Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable, loss=loss_fn),
     }
 
     # === Hyperparameter sweeps ===

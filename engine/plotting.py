@@ -614,6 +614,17 @@ def plot_hyperparam_grid(
                 and config.get(Hyperparam.Rho, None) == rho
             ]
 
+            # Also include base optimizers (GD, NGD, Adam, AdaGrad) with this lr but no rho
+            # They appear on every rho row since they're not SAM variants
+            base_optimizers_no_rho = [
+                config
+                for config in results.keys()
+                if config.learning_rate == lr
+                and config.get(Hyperparam.Rho, None) is None
+                and config.optimizer in (Optimizer.GD, Optimizer.NGD, Optimizer.Adam, Optimizer.AdaGrad)
+            ]
+            matching_configs.extend(base_optimizers_no_rho)
+
             if not matching_configs:
                 # Empty subplot - just show the parameter values
                 ax.text(

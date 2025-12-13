@@ -20,6 +20,7 @@ from engine import (
     get_direction_distance,
     expand_sweep_grid,
 )
+from engine.losses import LogisticLoss
 from engine.optimizers import (
     step_gd,
     step_sam_stable,
@@ -51,11 +52,17 @@ def main():
     def model_factory():
         return LinearModel(X.shape[1], device=device)
 
-    # Metrics factory
+    # === Loss function (configurable) ===
+    # Choose which loss function to use
+    # loss_fn = ExponentialLoss()  # Uncomment for default exponential loss
+    loss_fn = LogisticLoss()  # Using LogisticLoss as example
+
+    # === Metrics factory ===
+    # Pass the loss function so metrics use the same loss as optimizers
     def metrics_factory(model):
         return MetricsCollector(
             metric_fns={
-                Metric.Loss: exponential_loss,
+                Metric.Loss: loss_fn,  # Use configured loss function for metrics
                 Metric.Error: get_error_rate,
                 Metric.Angle: get_angle,
                 Metric.Distance: get_direction_distance,
@@ -63,31 +70,33 @@ def main():
             w_star=w_star,
         )
 
-    # Optimizer factories
+    # === Optimizer factories ===
+    # All optimizers use the same configured loss function
     optimizer_factories = {
-        Optimizer.GD: make_optimizer_factory(step_gd),
-        Optimizer.SAM: make_optimizer_factory(step_sam_stable),
-        Optimizer.NGD: make_optimizer_factory(step_ngd_stable),
-        Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable),
+        Optimizer.GD: make_optimizer_factory(step_gd, loss=loss_fn),
+        Optimizer.NGD: make_optimizer_factory(step_ngd_stable, loss=loss_fn),
+        Optimizer.SAM: make_optimizer_factory(step_sam_stable, loss=loss_fn),
+        Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable, loss=loss_fn),
     }
 
-    # Hyperparameter sweeps
-    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0, 1e1]
+    # === Hyperparameter sweeps ===
+    learning_rates = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]
+    rho_values = [0.05, 0.1, 0.5, 1.0, 5.0, 15.0, 50.0]
 
     sweeps = {
         Optimizer.GD: {
             Hyperparam.LearningRate: learning_rates,
         },
-        Optimizer.SAM: {
-            Hyperparam.LearningRate: learning_rates,
-            Hyperparam.Rho: [0.05],  # Default rho
-        },
         Optimizer.NGD: {
             Hyperparam.LearningRate: learning_rates,
         },
+        Optimizer.SAM: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: rho_values,
+        },
         Optimizer.SAM_NGD: {
             Hyperparam.LearningRate: learning_rates,
-            Hyperparam.Rho: [0.05],  # Default rho
+            Hyperparam.Rho: rho_values,
         },
     }
 
