@@ -29,6 +29,7 @@ from engine import (
     get_direction_distance,
     get_empirical_max_margin,
     expand_sweep_grid,
+    LogisticLoss,
 )
 from engine.plotting import plot_all
 from engine.optimizers import (
@@ -139,6 +140,91 @@ def test_linear_model_optimizers():
     except Exception as e:
         print(f"  ✗ Linear models failed: {e}")
         test_results["linear_models"] = f"FAIL: {e}"
+
+    return test_results
+
+
+def test_linear_model_with_logistic_loss():
+    """Test linear model optimizers with LogisticLoss (configurable loss)."""
+    print("\n" + "=" * 70)
+    print("TESTING LINEAR MODEL WITH LOGISTIC LOSS (Configurable Loss)")
+    print("=" * 70)
+
+    RNG = make_test_rng()
+    X, y, v_pop = make_test_dataset(RNG)
+    w_star = get_empirical_max_margin(X, y)
+    datasets = split_train_test(X, y, test_size=NUM_TEST_SAMPLES, rng=RNG)
+    device = DEVICE
+
+    learning_rates = [1e-4, 1e-3]
+
+    def model_factory():
+        return LinearModel(X.shape[1], device=device)
+
+    def metrics_factory(model):
+        return MetricsCollector(
+            metric_fns={
+                Metric.Loss: exponential_loss,
+                Metric.Error: get_error_rate,
+                Metric.Angle: get_angle,
+                Metric.Distance: get_direction_distance,
+            },
+            w_star=w_star,
+        )
+
+    # Create LogisticLoss instance
+    logistic_loss = LogisticLoss()
+
+    # Optimizer factories with LogisticLoss
+    optimizer_factories = {
+        Optimizer.GD: make_optimizer_factory(step_gd, loss=logistic_loss),
+        Optimizer.NGD: make_optimizer_factory(step_ngd_stable, loss=logistic_loss),
+        Optimizer.SAM: make_optimizer_factory(step_sam_stable, loss=logistic_loss),
+        Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable, loss=logistic_loss),
+    }
+
+    # Sweeps with learning rates
+    sweeps = {
+        Optimizer.GD: {Hyperparam.LearningRate: learning_rates},
+        Optimizer.NGD: {Hyperparam.LearningRate: learning_rates},
+        Optimizer.SAM: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: [0.05],
+        },
+        Optimizer.SAM_NGD: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: [0.05],
+        },
+    }
+
+    optimizer_configs = expand_sweep_grid(optimizer_factories, sweeps)
+
+    test_results = {}
+    try:
+        # Run 5 iterations for all optimizers with LogisticLoss
+        results = run_training(
+            datasets=datasets,
+            model_factory=model_factory,
+            optimizers=optimizer_configs,
+            metrics_collector_factory=metrics_factory,
+            total_iters=5,
+            debug=True,
+        )
+
+        # Plotting
+        plot_all(
+            results,
+            experiment_name="check_engine/linear_models_logistic_loss",
+        )
+
+        # Mark all optimizers as passed
+        for config in optimizer_configs.keys():
+            print(f"  ✓ {config.name}")
+            test_results[config.name] = "PASS"
+
+    except Exception as e:
+        print(f"  ✗ Linear models with LogisticLoss failed: {e}")
+        test_results["linear_models_logistic"] = f"FAIL: {e}"
 
     return test_results
 
@@ -501,6 +587,10 @@ def main():
     linear_results = test_linear_model_optimizers()
     linear_failures = [k for k, v in linear_results.items() if v != "PASS"]
 
+    # Test linear model with LogisticLoss (configurable loss)
+    logistic_results = test_linear_model_with_logistic_loss()
+    logistic_failures = [k for k, v in logistic_results.items() if v != "PASS"]
+
     # Test linear model with stateful optimizers
     stateful_results = test_linear_model_stateful_optimizers()
     stateful_failures = [k for k, v in stateful_results.items() if v != "PASS"]
@@ -519,25 +609,29 @@ def main():
     print("=" * 70)
 
     total_linear = len(linear_results)
+    total_logistic = len(logistic_results)
     total_stateful = len(stateful_results)
     total_twolayer = len(twolayer_results)
     total_plot = len(plot_results)
-    total_tests = total_linear + total_stateful + total_twolayer + total_plot
+    total_tests = total_linear + total_logistic + total_stateful + total_twolayer + total_plot
 
     passed_linear = total_linear - len(linear_failures)
+    passed_logistic = total_logistic - len(logistic_failures)
     passed_stateful = total_stateful - len(stateful_failures)
     passed_twolayer = total_twolayer - len(twolayer_failures)
     passed_plot = total_plot - len(plot_failures)
-    total_passed = passed_linear + passed_stateful + passed_twolayer + passed_plot
+    total_passed = passed_linear + passed_logistic + passed_stateful + passed_twolayer + passed_plot
 
     total_failures = (
         len(linear_failures)
+        + len(logistic_failures)
         + len(stateful_failures)
         + len(twolayer_failures)
         + len(plot_failures)
     )
 
     print(f"Linear Model (stateless):  {passed_linear}/{total_linear} passed")
+    print(f"Linear Model (LogisticLoss): {passed_logistic}/{total_logistic} passed")
     print(f"Linear Model (stateful):   {passed_stateful}/{total_stateful} passed")
     print(f"Two-Layer Model:           {passed_twolayer}/{total_twolayer} passed")
     print(f"Plotting System:           {passed_plot}/{total_plot} passed")
@@ -547,6 +641,8 @@ def main():
         print("\n❌ FAILURES:")
         for name in linear_failures:
             print(f"   LinearModel (stateless) + {name}: {linear_results[name]}")
+        for name in logistic_failures:
+            print(f"   LinearModel (LogisticLoss) + {name}: {logistic_results[name]}")
         for name in stateful_failures:
             print(f"   LinearModel (stateful) + {name}: {stateful_results[name]}")
         for name in twolayer_failures:

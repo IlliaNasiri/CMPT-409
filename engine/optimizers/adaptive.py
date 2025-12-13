@@ -1,5 +1,7 @@
 import torch
+from typing import Optional
 from .base import OptimizerState, StatefulOptimizer, SAMOptimizer
+from ..losses import Loss
 
 # -----------------------------------------------------------------------------
 # Adaptive Optimizer Factories (for LinearModel and general PyTorch models)
@@ -22,36 +24,38 @@ from .base import OptimizerState, StatefulOptimizer, SAMOptimizer
 # -----------------------------------------------------------------------------
 
 
-def Adam(betas=(0.9, 0.999), eps=1e-8) -> StatefulOptimizer:
+def Adam(betas=(0.9, 0.999), eps=1e-8, loss: Optional[Loss] = None) -> StatefulOptimizer:
     """
-    Factory for Adam optimizer with exponential loss.
+    Factory for Adam optimizer.
 
     Args:
         betas: Coefficients for computing running averages (default: (0.9, 0.999))
         eps: Term added to denominator for numerical stability (default: 1e-8)
+        loss: Loss function to use (defaults to ExponentialLoss)
 
     Returns:
         StatefulOptimizer wrapping torch.optim.Adam
     """
-    return StatefulOptimizer(torch.optim.Adam, betas=betas, eps=eps)
+    return StatefulOptimizer(torch.optim.Adam, loss=loss, betas=betas, eps=eps)
 
 
-def AdaGrad(eps=1e-8) -> StatefulOptimizer:
+def AdaGrad(eps=1e-8, loss: Optional[Loss] = None) -> StatefulOptimizer:
     """
-    Factory for AdaGrad optimizer with exponential loss.
+    Factory for AdaGrad optimizer.
 
     Args:
         eps: Term added to denominator for numerical stability (default: 1e-8)
+        loss: Loss function to use (defaults to ExponentialLoss)
 
     Returns:
         StatefulOptimizer wrapping torch.optim.Adagrad
     """
-    return StatefulOptimizer(torch.optim.Adagrad, eps=eps)
+    return StatefulOptimizer(torch.optim.Adagrad, loss=loss, eps=eps)
 
 
-def SAM_Adam(rho=0.05, betas=(0.9, 0.999), eps=1e-8) -> SAMOptimizer:
+def SAM_Adam(rho=0.05, betas=(0.9, 0.999), eps=1e-8, loss: Optional[Loss] = None) -> SAMOptimizer:
     """
-    Factory for SAM-Adam optimizer with exponential loss.
+    Factory for SAM-Adam optimizer.
 
     SAM (Sharpness-Aware Minimization) improves generalization by
     seeking parameters in flat minima regions.
@@ -60,24 +64,26 @@ def SAM_Adam(rho=0.05, betas=(0.9, 0.999), eps=1e-8) -> SAMOptimizer:
         rho: Neighborhood size for SAM perturbation (default: 0.05)
         betas: Coefficients for Adam running averages (default: (0.9, 0.999))
         eps: Term added to denominator for numerical stability (default: 1e-8)
+        loss: Loss function to use (defaults to ExponentialLoss)
 
     Returns:
         SAMOptimizer wrapping torch.optim.Adam
     """
-    return SAMOptimizer(torch.optim.Adam, rho=rho, betas=betas, eps=eps)
+    return SAMOptimizer(torch.optim.Adam, loss=loss, rho=rho, betas=betas, eps=eps)
 
 
-def SAM_AdaGrad(rho=0.05, eps=1e-8) -> SAMOptimizer:
+def SAM_AdaGrad(rho=0.05, eps=1e-8, loss: Optional[Loss] = None) -> SAMOptimizer:
     """
-    Factory for SAM-AdaGrad optimizer with exponential loss.
+    Factory for SAM-AdaGrad optimizer.
 
     Args:
         rho: Neighborhood size for SAM perturbation (default: 0.05)
         eps: Term added to denominator for numerical stability (default: 1e-8)
+        loss: Loss function to use (defaults to ExponentialLoss)
 
     Returns:
         SAMOptimizer wrapping torch.optim.Adagrad
     """
-    return SAMOptimizer(torch.optim.Adagrad, rho=rho, eps=eps)
+    return SAMOptimizer(torch.optim.Adagrad, loss=loss, rho=rho, eps=eps)
 
 

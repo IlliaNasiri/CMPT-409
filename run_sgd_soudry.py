@@ -20,6 +20,9 @@ from engine import (
     get_angle,
     get_direction_distance,
     expand_sweep_grid,
+    Loss,
+    ExponentialLoss,
+    LogisticLoss,
 )
 
 from engine.optimizers import (
@@ -64,11 +67,21 @@ def main():
         )
 
     # === Optimizer factories ===
+    # Example 1: Default exponential loss (ExponentialLoss is used by default)
+    # optimizer_factories = {
+    #     Optimizer.GD: make_optimizer_factory(step_sgd),
+    #     Optimizer.NGD: make_optimizer_factory(step_ngd_stable),
+    #     Optimizer.SAM: make_optimizer_factory(step_sam_stable),
+    #     Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable),
+    # }
+
+    # Example 2: Use custom loss function (uncomment to demonstrate LogisticLoss)
+    logistic_loss = LogisticLoss()
     optimizer_factories = {
-        Optimizer.GD: make_optimizer_factory(step_sgd),
-        Optimizer.NGD: make_optimizer_factory(step_ngd_stable),
-        Optimizer.SAM: make_optimizer_factory(step_sam_stable),
-        Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable),
+        Optimizer.GD: make_optimizer_factory(step_sgd, loss=logistic_loss),
+        Optimizer.NGD: make_optimizer_factory(step_ngd_stable, loss=logistic_loss),
+        Optimizer.SAM: make_optimizer_factory(step_sam_stable, loss=logistic_loss),
+        Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable, loss=logistic_loss),
     }
 
     # === Hyperparameter sweeps ===
@@ -102,7 +115,7 @@ def main():
         optimizers=optimizer_configs,
         metrics_collector_factory=metrics_factory,
         train_split=DatasetSplit.Train,
-        num_epochs=10000,
+        num_epochs=100,
         batch_size=32,
         drop_last=True,
         debug=True,

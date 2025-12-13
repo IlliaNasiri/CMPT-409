@@ -8,36 +8,36 @@ from ..constants import CLAMP_MIN, CLAMP_MAX
 # --- Manual Optimized Factories ---
 
 
-def ManualAdam(lr: float = 1e-3, betas=(0.9, 0.999), eps=1e-8):
-    return ManualTwolayerAdam(lr=lr, betas=betas, eps=eps)
+def ManualAdam(lr: float = 1e-3, betas=(0.9, 0.999), eps=1e-8, loss: Loss | None = None):
+    return ManualTwolayerAdam(lr=lr, betas=betas, eps=eps, loss=loss)
 
 
-def ManualAdaGrad(lr: float = 1e-2, eps=1e-8):
-    return ManualTwolayerAdaGrad(lr=lr, eps=eps)
+def ManualAdaGrad(lr: float = 1e-2, eps=1e-8, loss: Loss | None = None):
+    return ManualTwolayerAdaGrad(lr=lr, eps=eps, loss=loss)
 
 
-def ManualSAM_Adam(lr: float = 1e-3, rho=0.05, betas=(0.9, 0.999), eps=1e-8):
-    return ManualTwolayerSAM_Adam(lr=lr, rho=rho, betas=betas, eps=eps)
+def ManualSAM_Adam(lr: float = 1e-3, rho=0.05, betas=(0.9, 0.999), eps=1e-8, loss: Loss | None = None):
+    return ManualTwolayerSAM_Adam(lr=lr, rho=rho, betas=betas, eps=eps, loss=loss)
 
 
-def ManualSAM_AdaGrad(lr: float = 1e-2, rho=0.05, eps=1e-8):
-    return ManualTwolayerSAM_AdaGrad(lr=lr, rho=rho, eps=eps)
+def ManualSAM_AdaGrad(lr: float = 1e-2, rho=0.05, eps=1e-8, loss: Loss | None = None):
+    return ManualTwolayerSAM_AdaGrad(lr=lr, rho=rho, eps=eps, loss=loss)
 
 
-def ManualGD(lr: float = 1e-1):
-    return ManualTwolayerGD(lr=lr)
+def ManualGD(lr: float = 1e-1, loss: Loss | None = None):
+    return ManualTwolayerGD(lr=lr, loss=loss)
 
 
-def ManualNGD(lr: float = 1e-1):
-    return ManualTwolayerNGD(lr=lr)
+def ManualNGD(lr: float = 1e-1, loss: Loss | None = None):
+    return ManualTwolayerNGD(lr=lr, loss=loss)
 
 
-def ManualSAM(lr: float = 1e-1, rho=0.05):
-    return ManualTwolayerSAM(lr=lr, rho=rho)
+def ManualSAM(lr: float = 1e-1, rho=0.05, loss: Loss | None = None):
+    return ManualTwolayerSAM(lr=lr, rho=rho, loss=loss)
 
 
-def ManualSAM_NGD(lr: float = 1e-1, rho=0.05):
-    return ManualTwolayerSAM_NGD(lr=lr, rho=rho)
+def ManualSAM_NGD(lr: float = 1e-1, rho=0.05, loss: Loss | None = None):
+    return ManualTwolayerSAM_NGD(lr=lr, rho=rho, loss=loss)
 
 
 # -----------------------------------------------------------------------------
@@ -101,12 +101,17 @@ def _compute_grads(
 
 
 class ManualTwolayerAdam(OptimizerState):
-    """Fused Adam for Linear TwoLayerModel."""
+    """Fused Adam for Linear TwoLayerModel.
 
-    def __init__(self, lr: float = 1e-3, betas=(0.9, 0.999), eps=1e-8):
+    Note: This optimizer is specialized for exponential loss.
+    The loss parameter is accepted for API consistency but not used.
+    """
+
+    def __init__(self, lr: float = 1e-3, betas=(0.9, 0.999), eps=1e-8, loss: Loss | None = None):
         self.default_lr = lr
         self.betas = betas
         self.eps = eps
+        self.loss = loss  # For API consistency, not currently used
         self.state = None
 
     def reset(self):
@@ -154,11 +159,16 @@ class ManualTwolayerAdam(OptimizerState):
 
 
 class ManualTwolayerAdaGrad(OptimizerState):
-    """Fused Adagrad for Linear TwoLayerModel."""
+    """Fused Adagrad for Linear TwoLayerModel.
 
-    def __init__(self, lr: float = 1e-2, eps=1e-8):
+    Note: This optimizer is specialized for exponential loss.
+    The loss parameter is accepted for API consistency but not used.
+    """
+
+    def __init__(self, lr: float = 1e-2, eps=1e-8, loss: Loss | None = None):
         self.default_lr = lr
         self.eps = eps
+        self.loss = loss  # For API consistency, not currently used
         self.state = None
 
     def reset(self):
@@ -192,13 +202,18 @@ class ManualTwolayerAdaGrad(OptimizerState):
 
 
 class ManualTwolayerSAM_Adam(OptimizerState):
-    """Fused SAM-Adam for Linear TwoLayerModel."""
+    """Fused SAM-Adam for Linear TwoLayerModel.
 
-    def __init__(self, lr: float = 1e-3, rho=0.05, betas=(0.9, 0.999), eps=1e-8):
+    Note: This optimizer is specialized for exponential loss.
+    The loss parameter is accepted for API consistency but not used.
+    """
+
+    def __init__(self, lr: float = 1e-3, rho=0.05, betas=(0.9, 0.999), eps=1e-8, loss: Loss | None = None):
         self.default_lr = lr
         self.rho = rho
         self.betas = betas
         self.eps = eps
+        self.loss = loss  # For API consistency, not currently used
         self.state = None
 
     def reset(self):
@@ -258,12 +273,17 @@ class ManualTwolayerSAM_Adam(OptimizerState):
 
 
 class ManualTwolayerSAM_AdaGrad(OptimizerState):
-    """Fused SAM-Adagrad for Linear TwoLayerModel."""
+    """Fused SAM-Adagrad for Linear TwoLayerModel.
 
-    def __init__(self, lr: float = 1e-2, rho=0.05, eps=1e-8):
+    Note: This optimizer is specialized for exponential loss.
+    The loss parameter is accepted for API consistency but not used.
+    """
+
+    def __init__(self, lr: float = 1e-2, rho=0.05, eps=1e-8, loss: Loss | None = None):
         self.default_lr = lr
         self.rho = rho
         self.eps = eps
+        self.loss = loss  # For API consistency, not currently used
         self.state = None
 
     def reset(self):
@@ -308,10 +328,15 @@ class ManualTwolayerSAM_AdaGrad(OptimizerState):
 
 
 class ManualTwolayerGD(OptimizerState):
-    """Standard Gradient Descent for Linear TwoLayerModel."""
+    """Standard Gradient Descent for Linear TwoLayerModel.
 
-    def __init__(self, lr: float = 1e-1):
+    Note: This optimizer is specialized for exponential loss.
+    The loss parameter is accepted for API consistency but not used.
+    """
+
+    def __init__(self, lr: float = 1e-1, loss: Loss | None = None):
         self.default_lr = lr
+        self.loss = loss  # For API consistency, not currently used
         self.state = None
 
     def reset(self):
@@ -336,10 +361,14 @@ class ManualTwolayerNGD(OptimizerState):
 
     This effectively increases the step size as the loss decreases, counteracting
     the vanishing gradients of exponential loss.
+
+    Note: This optimizer is specialized for exponential loss.
+    The loss parameter is accepted for API consistency but not used.
     """
 
-    def __init__(self, lr: float = 1e-1):
+    def __init__(self, lr: float = 1e-1, loss: Loss | None = None):
         self.default_lr = lr
+        self.loss = loss  # For API consistency, not currently used
         self.state = None
 
     def reset(self):
@@ -366,11 +395,16 @@ class ManualTwolayerNGD(OptimizerState):
 
 
 class ManualTwolayerSAM(OptimizerState):
-    """Sharpness-Aware Minimization (SAM) for Linear TwoLayerModel."""
+    """Sharpness-Aware Minimization (SAM) for Linear TwoLayerModel.
 
-    def __init__(self, lr: float = 1e-1, rho=0.05):
+    Note: This optimizer is specialized for exponential loss.
+    The loss parameter is accepted for API consistency but not used.
+    """
+
+    def __init__(self, lr: float = 1e-1, rho=0.05, loss: Loss | None = None):
         self.default_lr = lr
         self.rho = rho
+        self.loss = loss  # For API consistency, not currently used
         self.state = None
 
     def reset(self):
@@ -406,11 +440,15 @@ class ManualTwolayerSAM_NGD(OptimizerState):
 
     Performs SAM perturbation, then applies loss-normalized gradient descent
     at the adversarial point: W = W - lr * (grad_adv / loss_adv)
+
+    Note: This optimizer is specialized for exponential loss.
+    The loss parameter is accepted for API consistency but not used.
     """
 
-    def __init__(self, lr: float = 1e-1, rho=0.05):
+    def __init__(self, lr: float = 1e-1, rho=0.05, loss: Loss | None = None):
         self.default_lr = lr
         self.rho = rho
+        self.loss = loss  # For API consistency, not currently used
         self.state = None
 
     def reset(self):

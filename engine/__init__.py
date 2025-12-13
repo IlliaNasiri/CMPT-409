@@ -26,6 +26,13 @@ from .metrics import (
     get_error_rate,
 )
 
+# Loss functions
+from .losses import (
+    Loss,
+    ExponentialLoss,
+    LogisticLoss,
+)
+
 # History
 from .history import TrainingHistory
 
@@ -56,6 +63,10 @@ __all__ = [
     "get_direction_distance",
     "exponential_loss",
     "get_error_rate",
+    # Loss functions
+    "Loss",
+    "ExponentialLoss",
+    "LogisticLoss",
     # History
     "TrainingHistory",
     # Models
