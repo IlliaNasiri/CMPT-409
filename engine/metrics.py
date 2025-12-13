@@ -9,6 +9,7 @@ import torch
 # Reference Metric Computation (w_star)
 # -----------------------------------------------------------------------------
 
+
 def get_empirical_max_margin(X: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     """
     Compute max-margin classifier using LinearSVC.
@@ -37,6 +38,7 @@ def get_empirical_max_margin(X: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 # -----------------------------------------------------------------------------
 # Vector Metrics (w vs w_star)
 # -----------------------------------------------------------------------------
+
 
 def get_angle(w: torch.Tensor, w_star: torch.Tensor) -> float:
     """
@@ -113,6 +115,7 @@ def get_norm(w: torch.Tensor, _unused=None) -> float:
 # Model Metrics (loss, error)
 # -----------------------------------------------------------------------------
 
+
 def exponential_loss(scores: torch.Tensor, y: torch.Tensor) -> float:
     """
     Compute exponential loss: mean(exp(-y * scores))
@@ -151,6 +154,7 @@ def get_error_rate(scores: torch.Tensor, y: torch.Tensor) -> float:
 # MetricsCollector
 # -----------------------------------------------------------------------------
 
+
 class MetricsCollector:
     """
     Computes multiple metrics on a model without forcing CPU synchronization.
@@ -158,9 +162,7 @@ class MetricsCollector:
     """
 
     def __init__(
-        self,
-        metric_fns: Dict[Metric, Callable],
-        w_star: Optional[torch.Tensor] = None
+        self, metric_fns: Dict[Metric, Callable], w_star: Optional[torch.Tensor] = None
     ):
         """
         Args:
@@ -173,7 +175,7 @@ class MetricsCollector:
     def compute_all(
         self,
         model: Model,
-        datasets: Dict[DatasetSplit, tuple[torch.Tensor, torch.Tensor]]
+        datasets: Dict[DatasetSplit, tuple[torch.Tensor, torch.Tensor]],
     ) -> Dict[MetricKey, float]:
         """
         Compute all metrics for all dataset splits.
@@ -223,12 +225,14 @@ class MetricsCollector:
         For linear models, this is just w.
         For multi-layer models, this is the effective linear predictor.
         """
-        if hasattr(model, 'effective_weight'):
-            return model.effective_weight
-        elif hasattr(model, 'w'):
-            return model.w
+        if hasattr(model, "effective_weight"):
+            return model.effective_weight  # type: ignore[attr-defined]
+        elif hasattr(model, "w"):
+            return model.w  # type: ignore[attr-defined]
         else:
-            raise ValueError(f"Model {type(model).__name__} has no accessible weight vector")
+            raise ValueError(
+                f"Model {type(model).__name__} has no accessible weight vector"
+            )
 
     def get_metric_keys(self, splits: list[DatasetSplit]) -> list[MetricKey]:
         """

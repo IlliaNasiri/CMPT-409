@@ -22,3 +22,9 @@ enabled = true
 format = false 
 # Depending on your plugin version, you might also need:
 formatEnabled = false
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.0",
+    "pyright>=1.1.407",
+]

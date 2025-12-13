@@ -1,10 +1,13 @@
 import torch
 import torch.nn as nn
 from .base import Model, ArrayLike
-from typing import List, override
+from typing import List, cast
+
 
 class TwoLayerModel(Model):
     """f(x) = x @ W1^T @ W2^T — PyTorch only"""
+
+    net: nn.Sequential  # Type annotation for the sequential network
 
     def __init__(self, D: int, k: int, output_dim: int = 1, device: str = "cpu"):
         super().__init__(device)
@@ -13,12 +16,16 @@ class TwoLayerModel(Model):
         self.output_dim = output_dim
 
         # Initialize as nn.Sequential for autograd
-        self.net = torch.nn.Sequential(
-            # Layer 1
-            torch.nn.Linear(D, k, bias=False),
-            # Layer 2
-            torch.nn.Linear(k, 1, bias=False),
-        ).double().to(device)
+        self.net = (
+            torch.nn.Sequential(
+                # Layer 1
+                torch.nn.Linear(D, k, bias=False),
+                # Layer 2
+                torch.nn.Linear(k, 1, bias=False),
+            )
+            .double()
+            .to(device)
+        )
 
     def forward(self, X: ArrayLike) -> ArrayLike:
         """f(x) = x @ W1^T @ W2^T — PyTorch only"""
@@ -38,15 +45,22 @@ class TwoLayerModel(Model):
         return self.k * self.D + self.output_dim * self.k
 
     @property
+    def W1(self) -> torch.Tensor:
+        """Returns the first layer weight tensor (k, D)."""
+        return cast(nn.Linear, self.net[0]).weight
+
+    @property
+    def W2(self) -> torch.Tensor:
+        """Returns the second layer weight tensor (1, k)."""
+        return cast(nn.Linear, self.net[1]).weight
+
+    @property
     def effective_weight(self) -> torch.Tensor:
         """
         Computes the effective linear predictor W_eff = W2 @ W1
         Returns shape (D,)
         """
-        W1 = self.net[0].weight  # Shape (k, D)
-        W2 = self.net[1].weight  # Shape (1, k)
-
         # W_eff = W2 @ W1
         with torch.no_grad():
-            W_eff = torch.matmul(W2, W1)
+            W_eff = torch.matmul(self.W2, self.W1)
             return W_eff.detach()

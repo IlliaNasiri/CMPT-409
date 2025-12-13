@@ -16,12 +16,13 @@ CLAMP_MAX = 300
 # Optimizer Base Classes
 # -----------------------------------------------------------------------------
 
+
 class OptimizerState(ABC):
     """
     Base class for optimizers.
     Now operates on the Model instance, not a flat vector.
     """
-    
+
     @abstractmethod
     def step(self, model: Model, X: ArrayLike, y: ArrayLike, lr: float):
         """
@@ -37,6 +38,7 @@ class OptimizerState(ABC):
     # def __call__(self, model: Model, X: ArrayLike, y: ArrayLike, lr: float) -> ArrayLike:
     #     """Allow calling the object like a function"""
     #     return self.step(model, X, y, lr)
+
 
 class StatelessOptimizer(OptimizerState):
     """Wrapper for stateless optimizers (GD, SAM, NGD)"""
@@ -58,6 +60,7 @@ class StatefulOptimizer(OptimizerState):
     Wraps standard PyTorch optimizers (Adam, SGD with momentum).
     Automatically handles initialization on the first step.
     """
+
     def __init__(self, torch_opt_class: type[torch.optim.Optimizer], **kwargs):
         self.opt_class = torch_opt_class
         self.kwargs = kwargs
@@ -67,7 +70,7 @@ class StatefulOptimizer(OptimizerState):
         # 1. Lazy Initialization: Create optimizer on first call
         if self.optimizer is None:
             # We assume model.parameters() returns torch tensors
-            self.optimizer = self.opt_class(model.parameters(), lr=lr, **self.kwargs)
+            self.optimizer = self.opt_class(model.parameters(), lr=lr, **self.kwargs)  # type: ignore[call-arg]
             self.loss_fn = ExponentialLoss()
 
         # 2. Update Learning Rate (if changed)
@@ -94,7 +97,10 @@ class SAMOptimizer(OptimizerState):
     Sharpness-Aware Minimization wrapper for PyTorch optimizers.
     Performs SAM's double forward/backward pass.
     """
-    def __init__(self, torch_opt_class: type[torch.optim.Optimizer], rho: float = 0.05, **kwargs):
+
+    def __init__(
+        self, torch_opt_class: type[torch.optim.Optimizer], rho: float = 0.05, **kwargs
+    ):
         self.opt_class = torch_opt_class
         self.kwargs = kwargs
         self.rho = rho
@@ -103,7 +109,7 @@ class SAMOptimizer(OptimizerState):
     def step(self, model: Model, X: ArrayLike, y: ArrayLike, lr: float):
         # 1. Lazy Initialization
         if self.optimizer is None:
-            self.optimizer = self.opt_class(model.parameters(), lr=lr, **self.kwargs)
+            self.optimizer = self.opt_class(model.parameters(), lr=lr, **self.kwargs)  # type: ignore[call-arg]
             self.loss_fn = ExponentialLoss()
 
         # 2. First forward/backward to compute gradient at current point
@@ -118,8 +124,10 @@ class SAMOptimizer(OptimizerState):
             for p in model.parameters():
                 original_params.append(p.clone())
                 if p.grad is not None:
-                    grad_norm = p.grad.norm() + 1e-12
-                    p.add_(p.grad, alpha=self.rho / grad_norm)
+                    grad_norm = (
+                        p.grad.norm() + 1e-12
+                    )  # Keep as Tensor for GPU efficiency
+                    p.add_(p.grad, alpha=self.rho / grad_norm)  # type: ignore[arg-type]
 
         # 4. Second forward/backward at perturbed point
         self.optimizer.zero_grad()
@@ -142,6 +150,7 @@ class ExponentialLoss(nn.Module):
     """
     Computes the mean exponential loss: mean(exp(-y * y_pred))
     """
+
     def __init__(self, clamp_min=-50, clamp_max=100):
         super().__init__()
         # Clamping is essential because exp() grows excessively fast.
@@ -173,6 +182,39 @@ class ExponentialLoss(nn.Module):
 # Factory Functions
 # -----------------------------------------------------------------------------
 
+
 def make_optimizer(step_fn: Callable) -> OptimizerState:
     """Create optimizer from stateless step function"""
     return StatelessOptimizer(step_fn)
+
+
+def make_optimizer_factory(
+    step_fn: Callable,
+    **fixed_kwargs,
+) -> Callable[..., StatelessOptimizer]:
+    """
+    Create optimizer factory with optional fixed hyperparameters.
+
+    Args:
+        step_fn: The optimizer step function (e.g., step_gd, step_sam_stable)
+        **fixed_kwargs: Hyperparameters to fix at factory creation time
+
+    Returns:
+        Factory callable that accepts additional kwargs and returns optimizer.
+
+    Example:
+        >>> # Factory with no fixed params (allows rho to be specified)
+        >>> sam_factory = make_optimizer_factory(step_sam_stable)
+        >>> opt = sam_factory(rho=0.1)
+        >>>
+        >>> # Factory with fixed rho
+        >>> sam_01_factory = make_optimizer_factory(step_sam_stable, rho=0.1)
+        >>> opt = sam_01_factory()  # rho already bound
+    """
+    from functools import partial
+
+    def factory(**kwargs) -> StatelessOptimizer:
+        merged = {**fixed_kwargs, **kwargs}
+        return StatelessOptimizer(partial(step_fn, **merged))
+
+    return factory

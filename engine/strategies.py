@@ -12,13 +12,22 @@ This module provides:
 from enum import Enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional, List, Union, Tuple, Any, TYPE_CHECKING
 import numpy as np
 import matplotlib.pyplot as plt
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+
+# Type for matplotlib colors (string names, hex codes, or RGBA tuples)
+ColorType = Union[
+    str, Tuple[float, float, float], Tuple[float, float, float, float], None
+]
 
 
 class AxisScale(Enum):
     """Axis scale types for matplotlib."""
+
     Linear = "linear"
     Log = "log"
     Symlog = "symlog"
@@ -56,7 +65,9 @@ class Scale(Transform):
 class Clamp(Transform):
     """Clip values to a range."""
 
-    def __init__(self, min_val: Optional[float] = None, max_val: Optional[float] = None):
+    def __init__(
+        self, min_val: Optional[float] = None, max_val: Optional[float] = None
+    ):
         self.min_val = min_val
         self.max_val = max_val
 
@@ -67,11 +78,12 @@ class Clamp(Transform):
 @dataclass
 class PlotContext:
     """Encapsulates all data required to render a single line."""
-    ax: plt.Axes
+
+    ax: Any  # matplotlib.axes.Axes
     x: np.ndarray
     y: np.ndarray
     label: str
-    color: Optional[str] = None
+    color: ColorType = None
     linestyle: str = "-"
     alpha: float = 1.0
 
@@ -89,7 +101,7 @@ class PlotStrategy:
         y_scale: AxisScale = AxisScale.Linear,
         y_label_suffix: str = "",
         y_lim: Optional[tuple[float, float]] = None,
-        **style_kwargs
+        **style_kwargs,
     ):
         self.transforms = transforms or []
         self.x_scale = x_scale
@@ -98,7 +110,7 @@ class PlotStrategy:
         self.y_lim = y_lim
         self.style_kwargs = style_kwargs
 
-    def pipe(self, transform: Transform) -> 'PlotStrategy':
+    def pipe(self, transform: Transform) -> "PlotStrategy":
         """Fluent interface to add a transform to the pipeline."""
         self.transforms.append(transform)
         return self
@@ -109,7 +121,7 @@ class PlotStrategy:
             values = t(values)
         return values
 
-    def configure_axis(self, ax: plt.Axes, base_label: str) -> None:
+    def configure_axis(self, ax: Any, base_label: str) -> None:
         """Apply axis configuration (scales, limits, labels)."""
         ax.set_xscale(self.x_scale.value)
         ax.set_yscale(self.y_scale.value)
@@ -120,8 +132,8 @@ class PlotStrategy:
 
         # Ensure y-axis tick labels are visible on all subplots (for sharey=True)
         # Only show labels on major ticks to avoid clutter (especially for log scales)
-        ax.tick_params(axis='y', which='major', labelleft=True)
-        ax.tick_params(axis='y', which='minor', labelleft=False)
+        ax.tick_params(axis="y", which="major", labelleft=True)
+        ax.tick_params(axis="y", which="minor", labelleft=False)
 
         ax.grid(True, which="major", alpha=0.3)
         if self.x_scale == AxisScale.Log or self.y_scale == AxisScale.Log:
@@ -131,11 +143,11 @@ class PlotStrategy:
         """Render the plot on the provided axes."""
         style = {**self.style_kwargs}
         if ctx.color:
-            style['color'] = ctx.color
+            style["color"] = ctx.color
         if ctx.linestyle:
-            style['linestyle'] = ctx.linestyle
-        style['alpha'] = ctx.alpha
-        style['label'] = ctx.label
+            style["linestyle"] = ctx.linestyle
+        style["alpha"] = ctx.alpha
+        style["label"] = ctx.label
 
         y_transformed = self.process_values(ctx.y)
         ctx.ax.plot(ctx.x, y_transformed, **style)
@@ -143,26 +155,27 @@ class PlotStrategy:
 
 # Factory Functions (Presets)
 
+
 def LogLogStrategy(eps: float = 1e-16, **kwargs) -> PlotStrategy:
     """Preset for Log-Log plots (Loss, Angle, Distance)."""
     base_transforms = [SafeLog(eps=eps)]
-    user_transforms = kwargs.pop('transforms', [])
+    user_transforms = kwargs.pop("transforms", [])
     return PlotStrategy(
         transforms=base_transforms + user_transforms,
         x_scale=AxisScale.Log,
         y_scale=AxisScale.Log,
-        **kwargs
+        **kwargs,
     )
 
 
 def PercentageStrategy(**kwargs) -> PlotStrategy:
     """Preset for percentage plots with automatic y-axis scaling (Error Rate)."""
     base_transforms = [Scale(100.0)]
-    user_transforms = kwargs.pop('transforms', [])
+    user_transforms = kwargs.pop("transforms", [])
     return PlotStrategy(
         transforms=base_transforms + user_transforms,
         x_scale=AxisScale.Log,
         y_scale=AxisScale.Linear,
         y_label_suffix=" (%)",
-        **kwargs
+        **kwargs,
     )

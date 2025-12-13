@@ -1,6 +1,7 @@
 import torch
-from typing import List, Dict
+from typing import List, Dict, Optional, Any
 from .types import MetricKey
+
 
 class TrainingHistory:
     """Pre-allocated 2D array for metric storage (PyTorch only)"""
@@ -9,23 +10,28 @@ class TrainingHistory:
         self,
         metric_keys: List[MetricKey],
         num_records: int,
-        device: str = "cpu"
+        device: str = "cpu",
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         """
         Args:
             metric_keys: List of MetricKey objects to track
             num_records: Maximum number of recording steps
             device: PyTorch device ("cpu" or "cuda:0")
+            metadata: Optional dict for storing configuration metadata
         """
         self.metric_keys = list(metric_keys)
         self._metric_to_col = {key: i for i, key in enumerate(metric_keys)}
         self._current_idx = 0
         self.device = device
+        self.metadata = metadata if metadata is not None else {}
 
         # Pre-allocate single 2D array (Torch only)
         num_metrics = len(metric_keys)
         self._steps = torch.zeros(num_records, dtype=torch.int64, device=device)
-        self._data = torch.zeros((num_records, num_metrics), dtype=torch.float64, device=device)
+        self._data = torch.zeros(
+            (num_records, num_metrics), dtype=torch.float64, device=device
+        )
 
     def record(self, step: int, metrics: Dict[MetricKey, float]):
         """
@@ -53,7 +59,7 @@ class TrainingHistory:
             Tensor of metric values for all recorded steps
         """
         col = self._metric_to_col[key]
-        return self._data[:self._current_idx, col]
+        return self._data[: self._current_idx, col]
 
     def get_steps(self) -> torch.Tensor:
         """
@@ -62,7 +68,7 @@ class TrainingHistory:
         Returns:
             Tensor of step numbers
         """
-        return self._steps[:self._current_idx]
+        return self._steps[: self._current_idx]
 
     def to_dict(self) -> Dict[str, torch.Tensor]:
         """
@@ -71,12 +77,12 @@ class TrainingHistory:
         Returns:
             Dict with 'steps' and one key per metric
         """
-        result = {'steps': self.get_steps()}
+        result = {"steps": self.get_steps()}
         for key in self.metric_keys:
             result[str(key)] = self.get(key)
         return result
 
-    def copy_cpu(self) -> 'TrainingHistory':
+    def copy_cpu(self) -> "TrainingHistory":
         """
         Transfer data from GPU to CPU.
 
@@ -90,7 +96,8 @@ class TrainingHistory:
         cpu_history = TrainingHistory(
             metric_keys=self.metric_keys,
             num_records=len(self._steps),
-            device="cpu"
+            device="cpu",
+            metadata=self.metadata.copy(),
         )
 
         # Copy data to CPU

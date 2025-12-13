@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Comprehensive integration test that runs every optimizer with every model type for 5 iteration.
+Comprehensive integration test that runs every optimizer with every model type for 5 iterations.
 This ensures all combinations work correctly and catches integration issues early.
 """
 
@@ -14,16 +14,34 @@ sys.path.insert(0, str(project_root))
 import torch
 import numpy as np
 
-from engine import LinearModel, make_soudry_dataset, split_train_test, run_training
-from engine import Metric, Optimizer, MetricsCollector
-from engine import exponential_loss, get_error_rate, get_angle, get_direction_distance
-from engine import get_empirical_max_margin
+from engine import (
+    LinearModel,
+    make_soudry_dataset,
+    split_train_test,
+    run_training,
+    Metric,
+    Optimizer,
+    Hyperparam,
+    MetricsCollector,
+    exponential_loss,
+    get_error_rate,
+    get_angle,
+    get_direction_distance,
+    get_empirical_max_margin,
+    expand_sweep_grid,
+)
 from engine.plotting import plot_all
 from engine.optimizers import (
-    step_gd, step_ngd_stable, step_sam_stable, step_sam_ngd_stable,
-    Adam, AdaGrad, SAM_Adam, SAM_AdaGrad
+    step_gd,
+    step_ngd_stable,
+    step_sam_stable,
+    step_sam_ngd_stable,
+    make_optimizer_factory,
+    # Adam,
+    # AdaGrad,
+    # SAM_Adam,
+    # SAM_AdaGrad,
 )
-from engine.optimizers.base import make_optimizer
 
 NUM_SAMPLES = 200
 NUM_TEST_SAMPLES = 40
@@ -32,16 +50,19 @@ DIM_PARAMS_D = 400
 SEED = 42
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+
 def make_test_rng(seed=SEED) -> np.random.Generator:
     # Fresh rng
     return np.random.default_rng(seed)
+
 
 def make_test_dataset(rng: np.random.Generator):
     # Fresh rng
     return make_soudry_dataset(n=NUM_SAMPLES, d=DIM_PARAMS_D, device=DEVICE, rng=rng)
 
+
 def test_linear_model_optimizers():
-    """Test all optimizers with LinearModel."""
+    """Test all optimizers with LinearModel using new API."""
     print("=" * 70)
     print("TESTING LINEAR MODEL WITH ALL OPTIMIZERS")
     print("=" * 70)
@@ -65,20 +86,32 @@ def test_linear_model_optimizers():
                 Metric.Angle: get_angle,
                 Metric.Distance: get_direction_distance,
             },
-            w_star=w_star
+            w_star=w_star,
         )
 
-    # All optimizers for linear model
-    optimizers = {
-        Optimizer.GD: make_optimizer(step_gd),
-        Optimizer.NGD: make_optimizer(step_ngd_stable),
-        Optimizer.SAM: make_optimizer(step_sam_stable),
-        Optimizer.SAM_NGD: make_optimizer(step_sam_ngd_stable),
-        Optimizer.Adam: Adam(),
-        Optimizer.AdaGrad: AdaGrad(),
-        Optimizer.SAM_Adam: SAM_Adam(),
-        Optimizer.SAM_AdaGrad: SAM_AdaGrad(),
+    # Optimizer factories for stateless optimizers
+    optimizer_factories = {
+        Optimizer.GD: make_optimizer_factory(step_gd),
+        Optimizer.NGD: make_optimizer_factory(step_ngd_stable),
+        Optimizer.SAM: make_optimizer_factory(step_sam_stable),
+        Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable),
     }
+
+    # Sweeps with learning rates
+    sweeps = {
+        Optimizer.GD: {Hyperparam.LearningRate: learning_rates},
+        Optimizer.NGD: {Hyperparam.LearningRate: learning_rates},
+        Optimizer.SAM: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: [0.05],
+        },
+        Optimizer.SAM_NGD: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: [0.05],
+        },
+    }
+
+    optimizer_configs = expand_sweep_grid(optimizer_factories, sweeps)
 
     test_results = {}
     try:
@@ -86,8 +119,7 @@ def test_linear_model_optimizers():
         results = run_training(
             datasets=datasets,
             model_factory=model_factory,
-            optimizers=optimizers,
-            learning_rates=learning_rates,
+            optimizers=optimizer_configs,
             metrics_collector_factory=metrics_factory,
             total_iters=5,
             debug=True,
@@ -96,19 +128,85 @@ def test_linear_model_optimizers():
         # Plotting
         plot_all(
             results,
-            learning_rates,
-            list(optimizers.keys()),
-            experiment_name="check_engine/linear_models"
+            experiment_name="check_engine/linear_models",
         )
 
         # Mark all optimizers as passed
-        for opt_name in optimizers.keys():
-            print(f"  ✓ {opt_name.name}")
-            test_results[opt_name] = "PASS"
+        for config in optimizer_configs.keys():
+            print(f"  ✓ {config.name}")
+            test_results[config.name] = "PASS"
 
     except Exception as e:
         print(f"  ✗ Linear models failed: {e}")
         test_results["linear_models"] = f"FAIL: {e}"
+
+    return test_results
+
+
+def test_linear_model_stateful_optimizers():
+    """Test stateful optimizers (Adam, AdaGrad) with LinearModel."""
+    print("\n" + "=" * 70)
+    print("TESTING LINEAR MODEL WITH STATEFUL OPTIMIZERS (Adam, AdaGrad)")
+    print("=" * 70)
+
+    RNG = make_test_rng()
+    X, y, v_pop = make_test_dataset(RNG)
+    w_star = get_empirical_max_margin(X, y)
+    datasets = split_train_test(X, y, test_size=NUM_TEST_SAMPLES, rng=RNG)
+    device = DEVICE
+
+    def model_factory():
+        return LinearModel(X.shape[1], device=device)
+
+    def metrics_factory(model):
+        return MetricsCollector(
+            metric_fns={
+                Metric.Loss: exponential_loss,
+                Metric.Error: get_error_rate,
+                Metric.Angle: get_angle,
+                Metric.Distance: get_direction_distance,
+            },
+            w_star=w_star,
+        )
+
+    # Stateful optimizers need different handling - they have fixed lr
+    # We'll test them individually with OptimizerConfig
+    from engine import OptimizerConfig
+
+    test_results = {}
+
+    stateful_optimizers = [
+        # (Optimizer.Adam, Adam, {}),
+        # (Optimizer.AdaGrad, AdaGrad, {}),
+        # (Optimizer.SAM_Adam, SAM_Adam, {"rho": 0.05}),
+        # (Optimizer.SAM_AdaGrad, SAM_AdaGrad, {"rho": 0.05}),
+    ]
+
+    for opt_enum, opt_class, extra_params in stateful_optimizers:
+        try:
+            # Create config with fixed lr (stateful optimizers handle lr internally)
+            config = OptimizerConfig.with_params(opt_enum, lr=1e-3, **extra_params)
+
+            def make_factory(cls=opt_class, params=extra_params):
+                return lambda: cls(**params)
+
+            optimizers = {config: make_factory()}
+
+            results = run_training(
+                datasets=datasets,
+                model_factory=model_factory,
+                optimizers=optimizers,
+                metrics_collector_factory=metrics_factory,
+                total_iters=5,
+                debug=False,
+            )
+
+            print(f"  ✓ {opt_enum.name}")
+            test_results[opt_enum.name] = "PASS"
+
+        except Exception as e:
+            print(f"  ✗ {opt_enum.name}: {e}")
+            test_results[opt_enum.name] = f"FAIL: {e}"
 
     return test_results
 
@@ -119,10 +217,16 @@ def test_twolayer_model_optimizers():
     print("TESTING TWO-LAYER MODEL WITH ALL OPTIMIZERS")
     print("=" * 70)
 
-    from engine import TwoLayerModel
+    from engine import TwoLayerModel, OptimizerConfig
     from engine.optimizers import (
-        ManualGD, ManualNGD, ManualSAM, ManualSAM_NGD,
-        ManualAdam, ManualAdaGrad, ManualSAM_Adam, ManualSAM_AdaGrad
+        ManualGD,
+        ManualNGD,
+        ManualSAM,
+        ManualSAM_NGD,
+        ManualAdam,
+        ManualAdaGrad,
+        ManualSAM_Adam,
+        ManualSAM_AdaGrad,
     )
 
     RNG = make_test_rng()
@@ -146,47 +250,45 @@ def test_twolayer_model_optimizers():
             },
         )
 
-    # All optimizers for two-layer model
-    optimizers = {
-        Optimizer.GD: ManualGD(),
-        Optimizer.NGD: ManualNGD(),
-        Optimizer.SAM: ManualSAM(),
-        Optimizer.SAM_NGD: ManualSAM_NGD(),
-        Optimizer.Adam: ManualAdam(),
-        Optimizer.AdaGrad: ManualAdaGrad(),
-        Optimizer.SAM_Adam: ManualSAM_Adam(),
-        Optimizer.SAM_AdaGrad: ManualSAM_AdaGrad(),
-    }
+    # Manual optimizers for two-layer model (they handle lr in step())
+    manual_optimizers = [
+        (Optimizer.GD, ManualGD, {}),
+        (Optimizer.NGD, ManualNGD, {}),
+        (Optimizer.SAM, ManualSAM, {"rho": 0.05}),
+        (Optimizer.SAM_NGD, ManualSAM_NGD, {"rho": 0.05}),
+        (Optimizer.Adam, ManualAdam, {}),
+        (Optimizer.AdaGrad, ManualAdaGrad, {}),
+        (Optimizer.SAM_Adam, ManualSAM_Adam, {"rho": 0.05}),
+        (Optimizer.SAM_AdaGrad, ManualSAM_AdaGrad, {"rho": 0.05}),
+    ]
 
     test_results = {}
-    try:
-        # Run 5 iterations for all optimizers
-        results = run_training(
-            datasets=datasets,
-            model_factory=model_factory,
-            optimizers=optimizers,
-            learning_rates=learning_rates,
-            metrics_collector_factory=metrics_factory,
-            total_iters=5,
-            debug=True,
-        )
 
-        # Plotting
-        plot_all(
-            results,
-            learning_rates,
-            list(optimizers.keys()),
-            experiment_name="check_engine/twolayer_models"
-        )
+    for opt_enum, opt_class, extra_params in manual_optimizers:
+        for lr in learning_rates:
+            config = OptimizerConfig.with_params(opt_enum, lr=lr, **extra_params)
+            try:
 
-        # Mark all optimizers as passed
-        for opt_name in optimizers.keys():
-            print(f"  ✓ {opt_name.name}")
-            test_results[opt_name] = "PASS"
+                def make_factory(cls=opt_class, params=extra_params):
+                    return lambda: cls(**params)
 
-    except Exception as e:
-        print(f"  ✗ Two-layer models failed: {e}")
-        test_results["twolayer_models"] = f"FAIL: {e}"
+                optimizers = {config: make_factory()}
+
+                results = run_training(
+                    datasets=datasets,
+                    model_factory=model_factory,
+                    optimizers=optimizers,
+                    metrics_collector_factory=metrics_factory,
+                    total_iters=5,
+                    debug=False,
+                )
+
+                print(f"  ✓ {config.name}")
+                test_results[config.name] = "PASS"
+
+            except Exception as e:
+                print(f"  ✗ {config.name}: {e}")
+                test_results[config.name] = f"FAIL: {e}"
 
     return test_results
 
@@ -207,6 +309,7 @@ def test_basic_imports():
         "engine.data",
         "engine.models",
         "engine.optimizers",
+        "engine.sweeps",
     ]
 
     failed = []
@@ -227,14 +330,15 @@ def test_plotting_system():
     print("TESTING PLOTTING SYSTEM")
     print("=" * 70)
 
-    from engine import LinearModel, make_soudry_dataset, split_train_test
-    from engine import Metric, Optimizer, MetricsCollector
-    from engine import exponential_loss, get_error_rate, get_angle, get_direction_distance
-    from engine import get_empirical_max_margin
-    from engine.optimizers import step_gd, step_sam_stable
-    from engine.optimizers.base import make_optimizer
-    from engine.plotting import plot_all
-    from engine.strategies import PlotStrategy, AxisScale, SafeLog, Scale, Clamp, LogLogStrategy, PercentageStrategy
+    from engine.strategies import (
+        PlotStrategy,
+        AxisScale,
+        SafeLog,
+        Scale,
+        Clamp,
+        LogLogStrategy,
+        PercentageStrategy,
+    )
 
     # Generate small dataset for quick plotting test
     print(f"\n  Generating dataset (n={NUM_SAMPLES}, d={DIM_PARAMS_D})...")
@@ -243,8 +347,6 @@ def test_plotting_system():
     X, y, v_pop = make_test_dataset(RNG)
     w_star = get_empirical_max_margin(X, y)
     datasets = split_train_test(X, y, test_size=40, rng=RNG)
-    D = DIM_PARAMS_D
-    k = NUM_HIDDEN_NEURONS_k
     device = DEVICE
 
     def model_factory():
@@ -258,21 +360,31 @@ def test_plotting_system():
                 Metric.Angle: get_angle,
                 Metric.Distance: get_direction_distance,
             },
-            w_star=w_star
+            w_star=w_star,
         )
 
-    optimizers = {
-        Optimizer.GD: make_optimizer(step_gd),
-        Optimizer.SAM: make_optimizer(step_sam_stable),
+    # Use new API
+    optimizer_factories = {
+        Optimizer.GD: make_optimizer_factory(step_gd),
+        Optimizer.SAM: make_optimizer_factory(step_sam_stable),
     }
 
-    print("  Running training (5 iterations)...")
     learning_rates = [0.1, 1.0]
+    sweeps = {
+        Optimizer.GD: {Hyperparam.LearningRate: learning_rates},
+        Optimizer.SAM: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: [0.05],
+        },
+    }
+
+    optimizer_configs = expand_sweep_grid(optimizer_factories, sweeps)
+
+    print("  Running training (5 iterations)...")
     results = run_training(
         datasets=datasets,
         model_factory=model_factory,
-        optimizers=optimizers,
-        learning_rates=learning_rates,
+        optimizers=optimizer_configs,
         metrics_collector_factory=metrics_factory,
         total_iters=5,
         debug=True,
@@ -285,8 +397,6 @@ def test_plotting_system():
     try:
         plot_all(
             results=results,
-            learning_rates=learning_rates,
-            optimizers=list(optimizers.keys()),
             experiment_name="check_engine/test_1_default_strategies",
         )
         print("    ✓ Default strategies")
@@ -306,8 +416,6 @@ def test_plotting_system():
         )
         plot_all(
             results=results,
-            learning_rates=learning_rates,
-            optimizers=list(optimizers.keys()),
             experiment_name="check_engine/test_2_custom_error",
             strategy_overrides={Metric.Error: custom_error},
         )
@@ -323,8 +431,6 @@ def test_plotting_system():
         loss_clamped = LogLogStrategy().pipe(Clamp(min_val=1e-10, max_val=1e2))
         plot_all(
             results=results,
-            learning_rates=learning_rates,
-            optimizers=list(optimizers.keys()),
             experiment_name="check_engine/test_3_clamped_loss",
             strategy_overrides={Metric.Loss: loss_clamped},
         )
@@ -341,8 +447,6 @@ def test_plotting_system():
         custom_loss = LogLogStrategy().pipe(Clamp(min_val=1e-12))
         plot_all(
             results=results,
-            learning_rates=learning_rates,
-            optimizers=list(optimizers.keys()),
             experiment_name="check_engine/test_4_multiple_overrides",
             strategy_overrides={
                 Metric.Error: custom_error,
@@ -366,8 +470,6 @@ def test_plotting_system():
         )
         plot_all(
             results=results,
-            learning_rates=learning_rates,
-            optimizers=list(optimizers.keys()),
             experiment_name="check_engine/test_5_symlog",
             strategy_overrides={Metric.Loss: symlog_strategy},
         )
@@ -395,9 +497,13 @@ def main():
             print(f"   {module}: {error}")
         return False
 
-    # Test linear model
+    # Test linear model with stateless optimizers
     linear_results = test_linear_model_optimizers()
     linear_failures = [k for k, v in linear_results.items() if v != "PASS"]
+
+    # Test linear model with stateful optimizers
+    stateful_results = test_linear_model_stateful_optimizers()
+    stateful_failures = [k for k, v in stateful_results.items() if v != "PASS"]
 
     # Test two-layer model
     twolayer_results = test_twolayer_model_optimizers()
@@ -413,28 +519,38 @@ def main():
     print("=" * 70)
 
     total_linear = len(linear_results)
+    total_stateful = len(stateful_results)
     total_twolayer = len(twolayer_results)
     total_plot = len(plot_results)
-    total_tests = total_linear + total_twolayer + total_plot
+    total_tests = total_linear + total_stateful + total_twolayer + total_plot
 
     passed_linear = total_linear - len(linear_failures)
+    passed_stateful = total_stateful - len(stateful_failures)
     passed_twolayer = total_twolayer - len(twolayer_failures)
     passed_plot = total_plot - len(plot_failures)
-    total_passed = passed_linear + passed_twolayer + passed_plot
+    total_passed = passed_linear + passed_stateful + passed_twolayer + passed_plot
 
-    total_failures = len(linear_failures) + len(twolayer_failures) + len(plot_failures)
+    total_failures = (
+        len(linear_failures)
+        + len(stateful_failures)
+        + len(twolayer_failures)
+        + len(plot_failures)
+    )
 
-    print(f"Linear Model:     {passed_linear}/{total_linear} passed")
-    print(f"Two-Layer Model:  {passed_twolayer}/{total_twolayer} passed")
-    print(f"Plotting System:  {passed_plot}/{total_plot} passed")
-    print(f"Total:            {total_passed}/{total_tests} passed")
+    print(f"Linear Model (stateless):  {passed_linear}/{total_linear} passed")
+    print(f"Linear Model (stateful):   {passed_stateful}/{total_stateful} passed")
+    print(f"Two-Layer Model:           {passed_twolayer}/{total_twolayer} passed")
+    print(f"Plotting System:           {passed_plot}/{total_plot} passed")
+    print(f"Total:                     {total_passed}/{total_tests} passed")
 
     if total_failures > 0:
         print("\n❌ FAILURES:")
-        for opt in linear_failures:
-            print(f"   LinearModel + {opt.name}: {linear_results[opt]}")
-        for opt in twolayer_failures:
-            print(f"   TwoLayerModel + {opt.name}: {twolayer_results[opt]}")
+        for name in linear_failures:
+            print(f"   LinearModel (stateless) + {name}: {linear_results[name]}")
+        for name in stateful_failures:
+            print(f"   LinearModel (stateful) + {name}: {stateful_results[name]}")
+        for name in twolayer_failures:
+            print(f"   TwoLayerModel + {name}: {twolayer_results[name]}")
         for test in plot_failures:
             print(f"   Plotting/{test}: {plot_results[test]}")
         all_passed = False

@@ -1,4 +1,4 @@
-"""Full-batch GD experiments on Soudry dataset."""
+"""Mini-batch SGD experiments on Soudry dataset with hyperparameter sweeps."""
 
 import torch
 import os
@@ -9,6 +9,7 @@ from engine import (
     DatasetSplit,
     Metric,
     Optimizer,
+    OptimizerConfig,
     Hyperparam,
     MetricsCollector,
     split_train_test,
@@ -22,36 +23,34 @@ from engine import (
 )
 from engine.optimizers import (
     step_gd,
-    step_sam_stable,
     step_ngd_stable,
+    step_sam_stable,
     step_sam_ngd_stable,
     make_optimizer_factory,
 )
 from engine.plotting import plot_all
 
-# Configure PyTorch to use half the CPU cores
 cpu_count = os.cpu_count()
 if cpu_count is not None:
     torch.set_num_threads(cpu_count // 2)
 
 
 def main():
-    # Use GPU if available
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    # Generate dataset
+    # === Dataset ===
     X, y, v_pop = make_soudry_dataset(n=500, d=5000, margin=1.0, device=device)
     w_star = get_empirical_max_margin(X, y)
-
-    # Split data
     datasets = split_train_test(X, y, test_size=100, random_state=42)
 
-    # Model factory
-    def model_factory():
-        return LinearModel(X.shape[1], device=device)
+    # === Model factory ===
+    input_dim = X.shape[1]
 
-    # Metrics factory
+    def model_factory():
+        return LinearModel(input_dim, device=device)
+
+    # === Metrics factory ===
     def metrics_factory(model):
         return MetricsCollector(
             metric_fns={
@@ -63,31 +62,32 @@ def main():
             w_star=w_star,
         )
 
-    # Optimizer factories
+    # === Optimizer factories ===
     optimizer_factories = {
         Optimizer.GD: make_optimizer_factory(step_gd),
-        Optimizer.SAM: make_optimizer_factory(step_sam_stable),
         Optimizer.NGD: make_optimizer_factory(step_ngd_stable),
+        Optimizer.SAM: make_optimizer_factory(step_sam_stable),
         Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable),
     }
 
-    # Hyperparameter sweeps
-    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0, 1e1]
+    # === Hyperparameter sweeps ===
+    learning_rates = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]
+    rho_values = [0.05, 0.1, 0.5, 1.0, 5.0, 15.0, 50.0]
 
     sweeps = {
         Optimizer.GD: {
             Hyperparam.LearningRate: learning_rates,
         },
-        Optimizer.SAM: {
-            Hyperparam.LearningRate: learning_rates,
-            Hyperparam.Rho: [0.05],  # Default rho
-        },
         Optimizer.NGD: {
             Hyperparam.LearningRate: learning_rates,
         },
+        Optimizer.SAM: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: rho_values,
+        },
         Optimizer.SAM_NGD: {
             Hyperparam.LearningRate: learning_rates,
-            Hyperparam.Rho: [0.05],  # Default rho
+            Hyperparam.Rho: rho_values,
         },
     }
 
@@ -98,21 +98,23 @@ def main():
     for config in optimizer_configs:
         print(f"  - {config.name}")
 
-    # Run training
+    # === Training ===
     results = run_training(
         datasets=datasets,
         model_factory=model_factory,
         optimizers=optimizer_configs,
         metrics_collector_factory=metrics_factory,
         train_split=DatasetSplit.Train,
-        total_iters=100_000,
+        num_epochs=10000,
+        batch_size=128,
+        drop_last=True,
         debug=True,
     )
 
-    # Plotting
+    # === Plotting ===
     plot_all(
         results,
-        experiment_name="soudry",
+        experiment_name="sgd_soudry_rho_sweep",
     )
 
 
