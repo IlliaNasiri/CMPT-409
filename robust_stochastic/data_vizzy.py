@@ -101,7 +101,7 @@ def plot_train_test_data(X_train, y_train, X_test, y_test, w_star, max_points=30
 
 
 def get_empirical_max_margin(X, y):
-    clf = LinearSVC(C=1e6, fit_intercept=False, dual="auto", max_iter=20000, tol=1e-6)
+    clf = LinearSVC(C=1e2, fit_intercept=False, dual="auto", max_iter=20000, tol=1e-6)
     clf.fit(X, y)
     w_svm = clf.coef_.flatten()
 
@@ -117,11 +117,15 @@ X_train = np.load("X_train.npy")
 y_train = np.load("y_train.npy")
 X_test  = np.load("X_test.npy")
 y_test  = np.load("y_test.npy")
-# w_star  = np.load("w_star.npy")
+w_star  = np.load("w_star.npy")
 
 # plot_train_test_data(X_train, y_train, X_test, y_test, w_star)
 
 
-w_star = get_empirical_max_margin(X_train, y_train)
+# w_star = get_empirical_max_margin(X_train, y_train)
 
-np.save("w_star.npy", w_star)
+# np.save("w_star.npy", w_star)
+
+print(np.linalg.norm(w_star))
+
+# print(X_train.shape)

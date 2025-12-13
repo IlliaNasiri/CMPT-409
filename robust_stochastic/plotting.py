@@ -23,6 +23,7 @@ def plot_all(
     # METRICS DEFINITION
     # ------------------------------
     metrics = [
+        ("norm", "Weight Norm", "norm.png"),
         ("dist", "Direction Distance", "distance.png"),
         ("angle", "Angle (radians)", "angle.png"),
         ("loss", "Exponential Loss", "loss.png"),
@@ -41,6 +42,7 @@ def plot_all(
             for opt_name, hist in sub.items():
                 prefix = f"lr{lr}_{opt_name}"
                 flat[f"{prefix}_steps"] = np.array(hist["steps"])
+                flat[f"{prefix}_norm"]  = np.array(hist["norm"])
                 flat[f"{prefix}_dist"]  = np.array(hist["dist"])
                 flat[f"{prefix}_angle"] = np.array(hist["angle"])
                 flat[f"{prefix}_loss"]  = np.array(hist["loss"])

@@ -13,7 +13,9 @@ from optimizers import (
     sgd_step,
     sgd_sam_step,
     stochastic_ngd_step,
-    sam_ngd_step
+    sam_ngd_step,
+    logistic_loss,
+    stochastic_logistic_grad,
 )
 
 
@@ -39,6 +41,7 @@ def make_algorithms(
     if include_sgd:
         def sgd_update(w, X, y, batch_indices, lr):
             grad = stochastic_exponential_grad(w, batch_indices, X, y)
+            # grad = stochastic_logistic_grad(w, batch_indices, X, y)
             return sgd_step(w, grad, lr)
 
         algos["SGD"] = sgd_update
@@ -46,6 +49,7 @@ def make_algorithms(
         def make_sgd_sam_update(rho):
             def sgd_sam_update(w, X, y, batch_indices, lr):
                 sgrad = stochastic_exponential_grad(w, batch_indices, X, y)
+                # sgrad = stochastic_logistic_grad(w, batch_indices, X, y)
                 return sgd_sam_step(w, sgrad, batch_indices, X, y, lr, rho=rho)
             return sgd_sam_update
 
@@ -59,6 +63,7 @@ def make_algorithms(
     if include_ngd:
         def ngd_update(w, X, y, batch_indices, lr):
             sgrad = stochastic_exponential_grad(w, batch_indices, X, y)
+            # sgrad = stochastic_logistic_grad(w, batch_indices, X, y)
             return stochastic_ngd_step(w, sgrad, batch_indices, X, y, lr)
 
         algos["NGD"] = ngd_update
@@ -66,6 +71,7 @@ def make_algorithms(
         def make_ngd_sam_update(rho):
             def ngd_sam_update(w, X, y, batch_indices, lr):
                 sgrad = stochastic_exponential_grad(w, batch_indices, X, y)
+                # sgrad = stochastic_logistic_grad(w, batch_indices, X, y)
                 return sam_ngd_step(w, sgrad, batch_indices, X, y, lr, rho=rho) 
             return ngd_sam_update
 
@@ -134,7 +140,9 @@ def run_experiments(
             print(f"\n=== Learning Rate Sweep: lr={lr} ===")
 
         # one parameter vector per algorithm
-        ws = {name: np.zeros(d) for name in algorithms.keys()}
+        # ws = {name: np.zeros(d) for name in algorithms.keys()}   # used to initialize with np.zeros(d)
+        ws = {name: np.random.randn(d) for name in algorithms.keys()}   # used to initialize with np.zeros(d)
+        # norm_history = {name: [] for name in algorithms.keys()}
 
         # histories per algorithm
         hists = {
@@ -174,6 +182,7 @@ def run_experiments(
                             f"NaN/Inf in '{name}' at step {t_global} (lr={lr})"
                         )
                     ws[name] = w_new
+                    # norm_history[name].append(np.linalg.norm(w_new))
 
                 # LOG WHEN WE HIT A THRESHOLD
                 while rec_idx < len(record_steps) and t_global >= record_steps[rec_idx]:
@@ -186,6 +195,7 @@ def run_experiments(
                         hist["steps"].append(epoch_x)
                         hist["norm"].append(np.linalg.norm(wcur))
                         hist["loss"].append(exponential_loss(wcur, X, y))
+                        # hist["loss"].append(logistic_loss(wcur, X, y))
                         hist["angle"].append(angle_between(wcur, w_star))
                         hist["dist"].append(direction_distance(wcur, w_star))
                         hist["err"].append(get_error_rate(wcur, X_test, y_test))
@@ -207,6 +217,10 @@ def run_experiments(
 
         results[lr] = hists
 
+        # norm_history_np = {name: np.array(vals) for name, vals in norm_history.items()}
+        # lr_str = str(lr).replace(".", "p")
+        # np.save(f"norm_history_lr={lr_str}.npy", norm_history_np)
+
     return results
 
 
@@ -217,9 +231,9 @@ if __name__ == "__main__":
     y_test  = np.load("y_test.npy")
     w_star  = np.load("w_star.npy")
 
-    learning_rates = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]
+    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1.0]
+    rhos = [0.05, 0.1, 1.0, 5.0, 15.0]
     # learning_rates = [0.01]   # fixed LR, based on empirical performance
-    rhos = [0.05, 0.1, 0.5, 1.0, 5.0, 15.0, 50.0]
     # rhos = [0.1]    # single rho, based on empirical performance
 
     algorithms = make_algorithms(rhos, include_sgd=True, include_ngd=True)  
@@ -232,7 +246,7 @@ if __name__ == "__main__":
         w_star,
         algorithms=algorithms,
         learning_rates=learning_rates,
-        batch_size=128,
+        batch_size=32,
         num_epochs=10000,
         debug=True,
     )
@@ -241,7 +255,5 @@ if __name__ == "__main__":
         results=results,
         learning_rates=learning_rates,
         optimizers=list(algorithms.keys()),
-        experiment_name="soudry_sam_rho_sweep",
+        experiment_name="fresh_run_norm",
     )
-
-
