@@ -40,11 +40,11 @@ def main():
     print(f"Using device: {device}")
 
     # Generate dataset
-    X, y, v_pop = make_soudry_dataset(n=200, d=5000, device=device)
+    X, y, v_pop = make_soudry_dataset(n=12_000, d=5000, device=device)
     w_star = get_empirical_max_margin(X, y)
 
     # Split data
-    datasets = split_train_test(X, y, test_size=0.2, random_state=42)
+    datasets = split_train_test(X, y, test_size=200, random_state=42)
 
     # Model factory
     def model_factory():

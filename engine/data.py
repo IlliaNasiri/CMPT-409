@@ -3,7 +3,7 @@ import torch
 from .types import DatasetSplit
 from typing import Dict, Tuple, Optional
 
-def make_soudry_dataset(n=200, d=5000, margin=1, sigma=0.3, device="cpu", rng: Optional[np.random.Generator] = None):
+def make_soudry_dataset(n=200, d=5000, margin=0.1, sigma=0.3, device="cpu", rng: Optional[np.random.Generator] = None):
     """Generate Soudry-style linearly separable dataset using specific RNG.
 
     Args:
@@ -44,7 +44,7 @@ def make_soudry_dataset(n=200, d=5000, margin=1, sigma=0.3, device="cpu", rng: O
 def split_train_test(
     X: torch.Tensor,
     y: torch.Tensor,
-    test_size: float = 0.2,
+    test_size: float | int = 0.2,
     rng: Optional[np.random.Generator] = None,
     random_state: int = None # Kept for backward compat, used if rng is None
 ) -> Dict[DatasetSplit, Tuple[torch.Tensor, torch.Tensor]]:
@@ -56,8 +56,13 @@ def split_train_test(
         rng = np.random.default_rng(random_state)
     
     n = X.shape[0]
-    n_test = int(n * test_size)
-    
+    if isinstance(test_size, float):
+        assert (not np.isclose(0.0, test_size) and np.isclose(1.0, test_size)), f"Expected: test_size must be in range 0.0 <= test_size <= 1.0, got: test_size is {test_size}"
+        n_test = int(n * test_size)
+    elif isinstance(test_size, int):
+        assert test_size > 0 and test_size < n, f"test_size {test_size} needs to be >0 and <n, total dataset size {n}"
+        n_test = test_size
+
     # Manual shuffle with the generator to support 64-bit seeds implicitly via rng state
     perm = rng.permutation(n)
     test_idx = perm[:n_test]
