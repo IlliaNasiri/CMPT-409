@@ -5,6 +5,13 @@ from ..models import Model
 import torch
 import torch.nn as nn
 
+# Global constants
+# Machine epsilon for float64 (Double Precision)
+EPS = 2.2e-16
+GRAD_TOL = 1e-30
+CLAMP_MIN = -300
+CLAMP_MAX = 300
+
 # -----------------------------------------------------------------------------
 # Optimizer Base Classes
 # -----------------------------------------------------------------------------

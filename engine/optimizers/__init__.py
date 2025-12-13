@@ -18,8 +18,12 @@ from .adaptive import (
 from .manual import (
     ManualAdam,
     ManualAdaGrad,
-    ManualSAMAdam,
-    ManualSAMAdaGrad,
+    ManualSAM_Adam,
+    ManualSAM_AdaGrad,
+    ManualGD,
+    ManualNGD,
+    ManualSAM,
+    ManualSAM_NGD
 )
 
 from .base import make_optimizer, make_adaptive_optimizer, make_sam_optimizer, OptimizerState, StatelessOptimizer, StatefulOptimizer
@@ -45,6 +49,10 @@ __all__ = [
     'SAM_Adagrad',
     'ManualAdam',
     'ManualAdaGrad',
-    'ManualSAMAdam',
-    'ManualSAMAdaGrad',
+    'ManualSAM_Adam',
+    'ManualSAM_AdaGrad',
+    'ManualGD',
+    'ManualNGD',
+    'ManualSAM',
+    'ManualSAM_NGD'
 ]

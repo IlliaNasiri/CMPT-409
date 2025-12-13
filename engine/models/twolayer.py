@@ -4,7 +4,7 @@ from .base import Model, ArrayLike
 from typing import List, override
 
 class TwoLayerModel(Model):
-    """f(x) = W2 @ relu(W1 @ x) — PyTorch only"""
+    """f(x) = x @ W1^T @ W2^T — PyTorch only"""
 
     def __init__(self, D: int, k: int, output_dim: int = 1, device: str = "cpu"):
         super().__init__(device)
@@ -21,7 +21,7 @@ class TwoLayerModel(Model):
         ).double().to(device)
 
     def forward(self, X: ArrayLike) -> ArrayLike:
-        """f(X) = W2 @ W1 @ X"""
+        """f(x) = x @ W1^T @ W2^T — PyTorch only"""
         Z = self.net(X)
         return Z.squeeze(-1)  # Return shape (N,) instead of (N, 1)
 
@@ -49,4 +49,4 @@ class TwoLayerModel(Model):
         # W_eff = W2 @ W1
         with torch.no_grad():
             W_eff = torch.matmul(W2, W1)
-        return W_eff.detach().view(-1)
+            return W_eff.detach()

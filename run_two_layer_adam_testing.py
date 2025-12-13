@@ -17,8 +17,8 @@ from engine import (
 from engine.optimizers.manual import (
     ManualAdam, 
     ManualAdaGrad, 
-    ManualSAMAdam, 
-    ManualSAMAdaGrad
+    ManualSAM_Adam, 
+    ManualSAM_AdaGrad
 )
 from engine.plotting import plot_all
 import torch
@@ -62,8 +62,8 @@ def main():
     optimizers = {
         Optimizer.Adam: ManualAdam(betas=(0.9, 0.999), eps=1e-8),
         Optimizer.AdaGrad: ManualAdaGrad(eps=1e-8),
-        Optimizer.SAM_Adam: ManualSAMAdam(rho=0.05, betas=(0.9, 0.999), eps=1e-8),
-        Optimizer.SAM_AdaGrad: ManualSAMAdaGrad(rho=0.05, eps=1e-8),
+        Optimizer.SAM_Adam: ManualSAM_Adam(rho=0.05, betas=(0.9, 0.999), eps=1e-8),
+        Optimizer.SAM_AdaGrad: ManualSAM_AdaGrad(rho=0.05, eps=1e-8),
     }
 
     # Run training
