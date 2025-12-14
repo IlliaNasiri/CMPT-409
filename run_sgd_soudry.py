@@ -123,7 +123,7 @@ def main():
         optimizers=optimizer_configs,
         metrics_collector_factory=metrics_factory,
         train_split=DatasetSplit.Train,
-        num_epochs=10_000,
+        num_epochs=100_000,
         batch_size=32,
         drop_last=True,
         debug=True,
