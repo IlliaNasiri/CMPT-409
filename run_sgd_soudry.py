@@ -9,7 +9,6 @@ from engine import (
     DatasetSplit,
     Metric,
     Optimizer,
-    OptimizerConfig,
     Hyperparam,
     MetricsCollector,
     split_train_test,
@@ -20,10 +19,8 @@ from engine import (
     get_angle,
     get_direction_distance,
     expand_sweep_grid,
-    Loss,
-    ExponentialLoss,
-    LogisticLoss,
 )
+from engine.losses import LogisticLoss
 
 from engine.optimizers import (
     step_sgd,
@@ -127,7 +124,7 @@ def main():
         optimizers=optimizer_configs,
         metrics_collector_factory=metrics_factory,
         train_split=DatasetSplit.Train,
-        num_epochs=10000,
+        num_epochs=10_000,
         batch_size=32,
         drop_last=True,
         debug=True,
@@ -137,6 +134,7 @@ def main():
     plot_all(
         results,
         experiment_name="sgd_soudry_rho_sweep",
+        save_separate=False,
     )
 
 

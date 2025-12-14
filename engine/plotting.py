@@ -55,7 +55,7 @@ def plot_all(
         strategy_overrides: Optional dict mapping Metric -> PlotStrategy to override defaults
         output_dir: Optional custom output directory (overrides experiment_name-based path)
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     if output_dir:
         base_dir = output_dir
     elif experiment_name:
