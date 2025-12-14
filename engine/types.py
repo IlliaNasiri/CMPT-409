@@ -2,6 +2,7 @@ from enum import Enum, auto
 from dataclasses import dataclass, field
 from typing import Any, Optional, Union, Tuple
 import torch
+import numpy as np
 
 # Everything is Torch now
 ArrayLike = torch.Tensor
@@ -29,8 +30,10 @@ class Metric(Enum):
     Angle = ("angle", LogLogStrategy())
     Distance = ("dist", LogLogStrategy())
     WeightNorm = ("weight_norm", LogLogStrategy())
-    WeightLossRatio = ("weight_loss_ratio", LogLogStrategy())
-    UpdateNorm = ("update_norm", LogLogStrategy())
+    WeightLossRatio = ("grad_loss_ratio", LogLogStrategy())
+    UpdateNorm = ("update_norm", LogLogStrategy(
+        x_filter=lambda x: x >= 2,
+    ))
 
     def __new__(cls, value: str, strategy: PlotStrategy):
         obj = object.__new__(cls)

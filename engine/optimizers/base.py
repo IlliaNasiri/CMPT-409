@@ -18,6 +18,14 @@ class OptimizerState(ABC):
     Now operates on the Model instance, not a flat vector.
     """
 
+    def __init__(self, metrics_collector=None):
+        """
+        Args:
+            metrics_collector: Optional MetricsCollector to update with gradient norms
+        """
+        from ..metrics import MetricsCollector
+        self.metrics_collector: Optional[MetricsCollector] = metrics_collector
+
     @abstractmethod
     def step(self, model: Model, X: ArrayLike, y: ArrayLike, lr: float):
         """
@@ -38,13 +46,14 @@ class OptimizerState(ABC):
 class StatelessOptimizer(OptimizerState):
     """Wrapper for stateless optimizers (GD, SAM, NGD)"""
 
-    def __init__(self, step_fn: Callable, loss: Optional[Loss] = None):
+    def __init__(self, step_fn: Callable, loss: Optional[Loss] = None, metrics_collector=None):
+        super().__init__(metrics_collector)
         self.step_fn = step_fn
         self.loss_fn = loss or ExponentialLoss()  # Create once, reuse across all steps
 
     def step(self, model: Model, X: ArrayLike, y: ArrayLike, lr: float):
-        # Pass the reusable loss function to the step function
-        self.step_fn(model, X, y, lr, self.loss_fn)
+        # Pass the reusable loss function and metrics collector to the step function
+        self.step_fn(model, X, y, lr, self.loss_fn, self.metrics_collector)
 
     def reset(self):
         pass  # No state to reset

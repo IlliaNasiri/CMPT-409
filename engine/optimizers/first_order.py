@@ -17,14 +17,8 @@ def step_gd(model, X, y, lr, loss_fn: Loss):
             grad = loss_fn.grad_linear(X, y, model.w)
             model.w -= lr * grad
     else:
-        model.zero_grad()
-        scores = model.forward(X)
-        loss = loss_fn(scores, y)
-        loss.backward()
-        with torch.no_grad():
-            for param in model.parameters():
-                if param.grad is not None:
-                    param -= lr * param.grad
+        raise NotImplementedError("Use ManualGD instead")
+
 
 
 def step_sgd(model, X, y, lr, loss_fn: Loss):
@@ -34,15 +28,7 @@ def step_sgd(model, X, y, lr, loss_fn: Loss):
             grad = loss_fn.grad_linear(X, y, model.w)
             model.w -= lr * grad
     else:
-        model.zero_grad()
-        scores = model.forward(X)
-        loss = loss_fn(scores, y)
-        loss.backward()
-        with torch.no_grad():
-            for param in model.parameters():
-                if param.grad is not None:
-                    param -= lr * param.grad
-
+        raise NotImplementedError("Use ManualSGD instead")
 
 def step_loss_ngd(
     model,
@@ -63,33 +49,14 @@ def step_loss_ngd(
     if hasattr(model, "w") and len(list(model.parameters())) == 1:
         with torch.no_grad():
             # Compute gradient and loss together for efficiency
-            if hasattr(loss_fn, 'grad_linear_with_loss'):
-                grad, loss = loss_fn.grad_linear_with_loss(X, y, model.w)
-            else:
-                # Fallback for Loss implementations without grad_linear_with_loss
-                grad = loss_fn.grad_linear(X, y, model.w)
-                scores = X @ model.w
-                loss = loss_fn(scores, y)
-
+            grad, loss = loss_fn.grad_linear_with_loss(X, y, model.w)
             grad_norm = grad.norm()
 
             if grad_norm > grad_tol:
                 model.w -= lr * (grad / loss)
             # else: gradient effectively zero, no update
     else:
-        # General case: autograd path
-        model.zero_grad()
-        scores = model.forward(X)
-        loss = loss_fn(scores, y)
-        loss.backward()
-
-        with torch.no_grad():
-            for param in model.parameters():
-                if param.grad is not None:
-                    grad_norm = param.grad.norm()
-                    # Normalize by LOSS, not grad norm
-                    if grad_norm > grad_tol:
-                        param -= lr * (param.grad / loss)
+        raise NotImplementedError("Use ManualLossNGD instead")
 
 
 def step_vec_ngd(
@@ -113,20 +80,6 @@ def step_vec_ngd(
             grad_norm = grad.norm()
             if grad_norm > grad_tol:
                 model.w -= lr * (grad / grad_norm)
-    else:
-        # General case: autograd path
-        model.zero_grad()
-        scores = model.forward(X)
-        loss = loss_fn(scores, y)
-        loss.backward()
-
-        with torch.no_grad():
-            for param in model.parameters():
-                if param.grad is not None:
-                    grad_norm = param.grad.norm()
-                    # Normalize by gradient norm
-                    if grad_norm > grad_tol:
-                        param -= lr * (param.grad / grad_norm)
 
 
 def step_sam_stable(
@@ -158,54 +111,7 @@ def step_sam_stable(
             # 4. Update
             model.w -= lr * grad_adv
     else:
-        # 1. Compute Gradients at current w
-        model.zero_grad(set_to_none=True)
-        scores = model.forward(X)
-        loss = loss_fn(scores, y)
-        loss.backward()
-
-        # Gather params with gradients
-        params_with_grad = [p for p in model.parameters() if p.grad is not None]
-        if not params_with_grad:
-            return
-
-        grads = [p.grad for p in params_with_grad]
-
-        with torch.no_grad():
-            # --- GLOBAL NORM CALCULATION ---
-            # Efficiently compute norm across all tensors
-            per_tensor_norms = torch._foreach_norm(grads, 2)
-            global_norm = torch.linalg.vector_norm(torch.stack(per_tensor_norms))
-
-            # Save original parameters
-            original_params = [p.clone() for p in params_with_grad]
-
-            # 2. SAM Perturbation (Global)
-            if global_norm > grad_tol:
-                scale = rho / global_norm
-                # p = p + (rho/||g||) * g
-                torch._foreach_add_(params_with_grad, grads, alpha=scale)
-
-        # 3. Compute Gradients at adversarial point
-        model.zero_grad(set_to_none=True)
-        scores_adv = model.forward(X)
-        loss_adv = loss_fn(scores_adv, y)
-        loss_adv.backward()
-
-        # Refresh gradients (grads_adv)
-        grads_adv = [p.grad for p in params_with_grad]
-
-        with torch.no_grad():
-            # 4. Restore & Update
-
-            # First, restore original weights: w = w_orig
-            for p, p_orig in zip(params_with_grad, original_params):
-                p.copy_(p_orig)
-
-            # Then apply standard GD update using adversarial gradients
-            # w = w - lr * g_adv
-            # Note: SAM uses standard GD update, NOT normalized update
-            torch._foreach_add_(params_with_grad, grads_adv, alpha=-lr)
+        raise NotImplementedError("Use ManualSAM instead")
 
 
 def step_sam_loss_ngd(
@@ -251,59 +157,7 @@ def step_sam_loss_ngd(
                 # No update, treat as zero
                 pass
     else:
-        # 1. Compute Gradients at current w
-        model.zero_grad(set_to_none=True)
-        scores = model.forward(X)
-        loss = loss_fn(scores, y)
-        loss.backward()
-
-        # Gather params that actually have gradients
-        params_with_grad = [p for p in model.parameters() if p.grad is not None]
-        if not params_with_grad:
-            return
-
-        grads = [p.grad for p in params_with_grad]
-
-        with torch.no_grad():
-            # --- GLOBAL NORM (for SAM perturbation) ---
-            per_tensor_norms = torch._foreach_norm(grads, 2)
-            global_norm = torch.linalg.vector_norm(torch.stack(per_tensor_norms))
-
-            # Store original parameters (clone is unavoidable for SAM)
-            original_params = [p.clone() for p in params_with_grad]
-
-            # 2. SAM Perturbation (Fused)
-            if global_norm > grad_tol:
-                scale = rho / global_norm
-                # Fused add: p = p + scale * g
-                torch._foreach_add_(params_with_grad, grads, alpha=scale)
-
-        # 3. Compute Gradients at adversarial point
-        model.zero_grad(set_to_none=True)
-        scores_adv = model.forward(X)
-        loss_adv = loss_fn(scores_adv, y)
-        loss_adv.backward()
-
-        # Refresh grads list
-        grads_adv = [p.grad for p in params_with_grad]
-
-        with torch.no_grad():
-            # 4. Loss-Normalized GD Update & Restore
-
-            # Restore weights first: p.copy_(p_orig)
-            for p, p_orig in zip(params_with_grad, original_params):
-                p.copy_(p_orig)
-
-            # Check if adversarial gradients are non-negligible
-            per_tensor_norms_adv = torch._foreach_norm(grads_adv, 2)
-            global_adv_norm = torch.linalg.vector_norm(
-                torch.stack(per_tensor_norms_adv)
-            )
-
-            if global_adv_norm > grad_tol:
-                # Loss-normalized update: p = p - (lr / loss_adv) * g_adv
-                update_scale = -lr / loss_adv
-                torch._foreach_add_(params_with_grad, grads_adv, alpha=update_scale)
+        raise NotImplementedError("Use ManualSAM_NGD instead")
 
 
 def step_sam_vec_ngd(
@@ -340,56 +194,4 @@ def step_sam_vec_ngd(
                     # Vector-normalized update
                     model.w -= lr * (grad_adv / grad_adv_norm)
     else:
-        # 1. Compute Gradients at current w
-        model.zero_grad(set_to_none=True)
-        scores = model.forward(X)
-        loss = loss_fn(scores, y)
-        loss.backward()
-
-        # Gather params that actually have gradients
-        params_with_grad = [p for p in model.parameters() if p.grad is not None]
-        if not params_with_grad:
-            return
-
-        grads = [p.grad for p in params_with_grad]
-
-        with torch.no_grad():
-            # --- GLOBAL NORM (for SAM perturbation) ---
-            per_tensor_norms = torch._foreach_norm(grads, 2)
-            global_norm = torch.linalg.vector_norm(torch.stack(per_tensor_norms))
-
-            # Store original parameters (clone is unavoidable for SAM)
-            original_params = [p.clone() for p in params_with_grad]
-
-            # 2. SAM Perturbation (Fused)
-            if global_norm > grad_tol:
-                scale = rho / global_norm
-                # Fused add: p = p + scale * g
-                torch._foreach_add_(params_with_grad, grads, alpha=scale)
-
-        # 3. Compute Gradients at adversarial point
-        model.zero_grad(set_to_none=True)
-        scores_adv = model.forward(X)
-        loss_adv = loss_fn(scores_adv, y)
-        loss_adv.backward()
-
-        # Refresh grads list
-        grads_adv = [p.grad for p in params_with_grad]
-
-        with torch.no_grad():
-            # 4. Vector-Normalized GD Update & Restore
-
-            # Restore weights first: p.copy_(p_orig)
-            for p, p_orig in zip(params_with_grad, original_params):
-                p.copy_(p_orig)
-
-            # Check if adversarial gradients are non-negligible
-            per_tensor_norms_adv = torch._foreach_norm(grads_adv, 2)
-            global_adv_norm = torch.linalg.vector_norm(
-                torch.stack(per_tensor_norms_adv)
-            )
-
-            if global_adv_norm > grad_tol:
-                # Vector-normalized update: p = p - (lr / ||g_adv||) * g_adv
-                update_scale = -lr / global_adv_norm
-                torch._foreach_add_(params_with_grad, grads_adv, alpha=update_scale)
+        raise NotImplementedError("Use ManualSAM_VecNGD instead")

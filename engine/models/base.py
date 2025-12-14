@@ -24,6 +24,11 @@ class Model(ABC):
         """Clears gradients."""
         pass
 
+    @property
+    @abstractmethod
+    def effective_weight(self) -> torch.Tensor:
+        pass
+
     def train(self, mode: bool = True):
         """Optional: Toggle training mode (for Dropout/BatchNorm)."""
         pass

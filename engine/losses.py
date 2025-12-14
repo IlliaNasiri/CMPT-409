@@ -7,6 +7,7 @@ All losses support two interfaces:
 """
 
 from abc import ABC, abstractmethod
+from typing import override
 import torch
 from .constants import EPS, GRAD_TOL, CLAMP_MIN, CLAMP_MAX
 
@@ -56,6 +57,23 @@ class Loss(ABC):
         """
         pass
 
+    @abstractmethod
+    def grad_linear_with_loss(
+        self, X: torch.Tensor, y: torch.Tensor, w: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Compute both gradient and loss simultaneously for efficiency.
+
+        Returns:
+            (gradient, loss) tuple
+        """
+        pass
+
+    @abstractmethod
+    def grad_scores(self, scores: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        pass
+
+
 
 class ExponentialLoss(Loss):
     """
@@ -76,6 +94,8 @@ class ExponentialLoss(Loss):
         margins_clamped = torch.clamp(margins, self.clamp_min, self.clamp_max)
         return torch.mean(torch.exp(-margins_clamped))
 
+
+    @override
     def grad_linear(self, X: torch.Tensor, y: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
         """
         Compute gradient optimized for GPU.
@@ -106,6 +126,7 @@ class ExponentialLoss(Loss):
 
         return grad.view_as(w)
 
+    @override
     def grad_linear_with_loss(
         self, X: torch.Tensor, y: torch.Tensor, w: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -138,6 +159,14 @@ class ExponentialLoss(Loss):
         return grad.view_as(w), loss
 
 
+    @override
+    def grad_scores(self, scores: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        y = y.view_as(scores)
+        margins = torch.clamp(y * scores, self.clamp_min, self.clamp_max)
+        return -y * torch.exp(-margins)
+
+
+
 class LogisticLoss(Loss):
     """
     Logistic loss: L(w) = mean(log(1 + exp(-y * w^T x)))
@@ -159,6 +188,8 @@ class LogisticLoss(Loss):
         # We want log(1 + exp(-m)) = softplus(-m)
         return torch.mean(torch.nn.functional.softplus(-margins))
 
+
+    @override
     def grad_linear(self, X: torch.Tensor, y: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
         """
         Compute gradient optimized for GPU.
@@ -187,6 +218,8 @@ class LogisticLoss(Loss):
 
         return grad.view_as(w)
 
+
+    @override
     def grad_linear_with_loss(
         self, X: torch.Tensor, y: torch.Tensor, w: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -214,3 +247,9 @@ class LogisticLoss(Loss):
         loss = torch.nn.functional.softplus(-margins).mean()
 
         return grad.view_as(w), loss
+
+
+    @override
+    def grad_scores(self, scores: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        y = y.view_as(scores)
+        return -y * torch.sigmoid(-y * scores)

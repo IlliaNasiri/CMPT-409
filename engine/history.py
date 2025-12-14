@@ -33,7 +33,7 @@ class TrainingHistory:
             (num_records, num_metrics), dtype=torch.float64, device=device
         )
 
-    def record(self, step: int, metrics: Dict[MetricKey, float]):
+    def record(self, step: int, metrics: Dict[MetricKey, torch.Tensor]):
         """
         Write metrics to pre-allocated row (no append).
 

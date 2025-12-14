@@ -46,12 +46,12 @@ class TwoLayerModel(Model):
 
     @property
     def W1(self) -> torch.Tensor:
-        """Returns the first layer weight tensor (k, D)."""
+        """Returns the first layer weight tensor (D, k)."""
         return cast(nn.Linear, self.net[0]).weight
 
     @property
     def W2(self) -> torch.Tensor:
-        """Returns the second layer weight tensor (1, k)."""
+        """Returns the second layer weight tensor (k, 1)."""
         return cast(nn.Linear, self.net[1]).weight
 
     @property

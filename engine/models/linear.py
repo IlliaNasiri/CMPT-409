@@ -9,7 +9,7 @@ class LinearModel(Model):
         self.D = D
 
         # Initialize weights (Torch only)
-        self.w = torch.randn(D, dtype=torch.float64, device=device) * 1e-6
+        self.w = torch.randn(D, dtype=torch.float64, device=device)
         self.w.requires_grad = True
 
     def forward(self, X: ArrayLike) -> ArrayLike:
@@ -24,6 +24,10 @@ class LinearModel(Model):
         """Clear gradients"""
         if self.w.grad is not None:
             self.w.grad.zero_()
+
+    @property
+    def effective_weight(self) -> torch.Tensor:
+        return self.w.detach()
 
     @property
     def num_parameters(self) -> int:

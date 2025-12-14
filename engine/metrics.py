@@ -40,7 +40,7 @@ def get_empirical_max_margin(X: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 # -----------------------------------------------------------------------------
 
 
-def get_angle(w: torch.Tensor, w_star: torch.Tensor) -> float:
+def get_angle(w: torch.Tensor, w_star: torch.Tensor) -> torch.Tensor:
     """
     Compute angle between two vectors in radians.
 
@@ -66,10 +66,10 @@ def get_angle(w: torch.Tensor, w_star: torch.Tensor) -> float:
     cos_angle = torch.clamp(dot_val / (n_w * n_star + eps), -1.0, 1.0)
     angle = torch.acos(cos_angle)
 
-    return angle.item()
+    return angle
 
 
-def get_direction_distance(w: torch.Tensor, w_star: torch.Tensor) -> float:
+def get_direction_distance(w: torch.Tensor, w_star: torch.Tensor) -> torch.Tensor:
     """
     L2 distance between normalized directions.
 
@@ -94,10 +94,10 @@ def get_direction_distance(w: torch.Tensor, w_star: torch.Tensor) -> float:
     diff = w_norm - w_star_norm
     distance = torch.norm(diff)
 
-    return distance.item()
+    return distance
 
 
-def get_norm(w: torch.Tensor, _unused=None) -> float:
+def get_norm(w: torch.Tensor, _unused=None) -> torch.Tensor:
     """
     L2 norm of weight vector.
 
@@ -108,7 +108,7 @@ def get_norm(w: torch.Tensor, _unused=None) -> float:
     Returns:
         Norm (Python float)
     """
-    return torch.norm(w).item()
+    return torch.norm(w)
 
 
 # -----------------------------------------------------------------------------
@@ -116,24 +116,7 @@ def get_norm(w: torch.Tensor, _unused=None) -> float:
 # -----------------------------------------------------------------------------
 
 
-def exponential_loss(scores: torch.Tensor, y: torch.Tensor) -> float:
-    """
-    Compute exponential loss: mean(exp(-y * scores))
-
-    Args:
-        scores: Model predictions (N,)
-        y: Labels {-1, +1} (N,)
-
-    Returns:
-        Loss value (Python float)
-    """
-    margins = y * scores
-    safe_margins = torch.clamp(margins, -50, 100)
-    loss = torch.mean(torch.exp(-safe_margins))
-    return loss.item()
-
-
-def get_error_rate(scores: torch.Tensor, y: torch.Tensor) -> float:
+def get_error_rate(scores: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     """
     Compute classification error rate.
 
@@ -147,7 +130,7 @@ def get_error_rate(scores: torch.Tensor, y: torch.Tensor) -> float:
     predictions = torch.sign(scores)
     errors = (predictions != y).float()
     error_rate = torch.mean(errors)
-    return error_rate.item()
+    return error_rate
 
 
 # -----------------------------------------------------------------------------
@@ -170,18 +153,7 @@ def get_weight_norm(model: Model) -> torch.Tensor:
         0-d tensor containing the weight norm
     """
     with torch.no_grad():
-        if hasattr(model, "w"):
-            return model.w.norm()
-
-        # Handle autograd models: compute norm across all parameters
-        param = next(model.parameters(), None)
-        if param is None:
-            return torch.tensor(0.0, device=None, dtype=torch.float64, requires_grad=False)
-
-        total = torch.zeros((), device=param.device, dtype=param.dtype, requires_grad=False)
-        for p in model.parameters():
-            total = total + p.norm() ** 2
-        return total.sqrt()
+        return model.effective_weight.norm()
 
 
 # Placeholder signature for update_norm tracking
@@ -225,12 +197,14 @@ class MetricsCollector:
         self.metric_fns = metric_fns
         self.w_star = w_star
         self.w_prev = None  # Track previous weights for UpdateNorm stability metric
+        self.grad_norm: Optional[torch.Tensor] = None  # Gradient norm set by optimizer
+        self.train_loss: Optional[torch.Tensor] = None  # Training loss set by optimizer
 
     def compute_all(
         self,
         model: Model,
         datasets: Dict[DatasetSplit, tuple[torch.Tensor, torch.Tensor]],
-    ) -> Dict[MetricKey, float]:
+    ) -> Dict[MetricKey, torch.Tensor]:
         """
         Compute all metrics for all dataset splits.
 
@@ -255,7 +229,7 @@ class MetricsCollector:
 
                 # Lazy fetch of effective weight
                 if w_eff is None:
-                    w_eff = self._get_effective_weight(model)
+                    w_eff = model.effective_weight
 
                 value = metric_fn(w_eff, self.w_star)
                 key = MetricKey(metric=metric, split=None)
@@ -264,12 +238,18 @@ class MetricsCollector:
             elif metric.requires_split:
                 # Dataset metrics (Loss, Error): compute on each split
                 for split, (X, y) in datasets.items():
-                    # Forward pass
-                    with torch.no_grad():
-                        scores = model.forward(X)
+                    # Check if we can reuse train loss from optimizer
+                    if metric == Metric.Loss and split == DatasetSplit.Train and self.train_loss is not None:
+                        value = self.train_loss
+                        # Reset for next iteration
+                        self.train_loss = None
+                    else:
+                        # Forward pass
+                        with torch.no_grad():
+                            scores = model.forward(X)
 
-                    # Compute metric
-                    value = metric_fn(scores, y)
+                        # Compute metric
+                        value = metric_fn(scores, y)
                     key = MetricKey(metric=metric, split=split)
                     results[key] = value
 
@@ -281,9 +261,15 @@ class MetricsCollector:
                 if metric == Metric.WeightNorm:
                     value = get_weight_norm(model)
                 elif metric == Metric.UpdateNorm:
-                    w_eff_for_update = self._get_effective_weight(model)
-                    value = compute_update_norm(w_eff_for_update, self.w_prev)
-                    self.w_prev = w_eff_for_update.clone()
+                    if self.grad_norm is None:
+                        raise ValueError(
+                            "UpdateNorm metric requires grad_norm to be set by the optimizer. "
+                            "Ensure the optimizer has a reference to this MetricsCollector and sets grad_norm during step()."
+                        )
+                    # Use the gradient norm provided by the optimizer (unscaled by learning rate)
+                    value = self.grad_norm
+                    # Reset for next iteration
+                    self.grad_norm = None
                 elif metric == Metric.WeightLossRatio:
                     w_norm = get_weight_norm(model)
                     # Reuse loss from results if already computed
@@ -302,24 +288,10 @@ class MetricsCollector:
                     continue
 
                 key = MetricKey(metric=metric, split=None)
-                results[key] = value
+                results[key] = value.detach()
 
         return results
 
-    def _get_effective_weight(self, model: Model) -> torch.Tensor:
-        """
-        Extract effective weight vector from model.
-        For linear models, this is just w.
-        For multi-layer models, this is the effective linear predictor.
-        """
-        if hasattr(model, "effective_weight"):
-            return model.effective_weight  # type: ignore[attr-defined]
-        elif hasattr(model, "w"):
-            return model.w  # type: ignore[attr-defined]
-        else:
-            raise ValueError(
-                f"Model {type(model).__name__} has no accessible weight vector"
-            )
 
     def get_metric_keys(self, splits: list[DatasetSplit]) -> list[MetricKey]:
         """

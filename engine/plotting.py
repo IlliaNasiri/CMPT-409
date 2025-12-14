@@ -1,5 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import colorsys
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
+
 from pathlib import Path
 from typing import Dict, List, Union, Optional, Any, Mapping
 from datetime import datetime
@@ -142,17 +146,23 @@ def plot_all(
                 ))
 
         # --- Dispatch Tasks to Plotters ---
+        def get_path(task: PlotTask, folder: str, suffix: str = "") -> Path:
+            return base_dir / folder / f"{task.filename_prefix}{suffix}.png"
+
+        # Detect if we have hyperparameter sweeps (configs with rho)
+        has_rho_sweeps = any(
+            config.get(Hyperparam.Rho) is not None for config in all_configs
+        )
+
         for task in tasks:
             # Helper to build consistent paths
-            def get_path(folder: str, suffix: str = "") -> Path:
-                return base_dir / folder / f"{task.filename_prefix}{suffix}.png"
 
             if save_combined:
                 plot_combined(
                     results, configs_by_lr, learning_rates,
                     task,
                     strategy,
-                    get_path("combined")
+                    get_path(task, "combined")
                 )
 
             if save_separate:
@@ -169,14 +179,10 @@ def plot_all(
                     results, configs_by_lr, learning_rates,
                     task,
                     strategy,
-                    get_path("aggregated", "_comparison")
+                    get_path(task, "aggregated", "_comparison")
                 )
 
-        # Detect if we have hyperparameter sweeps (configs with rho)
-        has_rho_sweeps = any(
-            config.get(Hyperparam.Rho) is not None for config in all_configs
-        )
-
+        # Generate hyperparameter grid plots for appropriate tasks
         if has_rho_sweeps:
             # Extract unique rho and learning rate values
             rho_values = sorted(
@@ -194,13 +200,12 @@ def plot_all(
                 )
             )
 
-            # Generate hyperparameter grid plots for each task
             for task in tasks:
                 plot_hyperparam_grid(
                     results, learning_rates_for_grid, rho_values,
                     task,
                     strategy,
-                    get_path("hyperparam_grid", "_grid")
+                    get_path(task, "hyperparam_grid", "_grid")
                 )
 
         # Detect if we have base/SAM optimizer pairs
@@ -213,7 +218,7 @@ def plot_all(
                     results,
                     task,
                     strategy,
-                    get_path("sam_comparison", "_sam_comparison")
+                    get_path(task, "sam_comparison", "_sam_comparison")
                 )
 
     # Detect if we have stability metrics and dispatch stability analysis
@@ -251,6 +256,7 @@ def _get_histories(
     if isinstance(entry, list):
         return entry
     return [entry]
+
 
 
 def plot_aggregated(
@@ -372,11 +378,7 @@ def plot_aggregated(
 
     repeat_text = f", Repeated x{num_repeats}" if num_repeats > 1 else ""
     split_prefix = f"{split_name} " if split_name else ""
-    fig.suptitle(
-        f"{split_prefix}{key.metric.display_name} Comparison for each Optimizer{repeat_text}",
-        fontsize=13,
-        y=0.98,
-    )
+    strategy.apply_suptitle(fig, f"{split_prefix}{key.metric.display_name} Comparison for each Optimizer{repeat_text}")
 
     # Create single legend above the plots (after suptitle for proper spacing)
     handles, labels = axes[0].get_legend_handles_labels()
@@ -392,6 +394,7 @@ def plot_aggregated(
 
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
+
 
 
 def plot_combined(
@@ -419,8 +422,6 @@ def plot_combined(
     show_split_styles = has_splits and is_loss_or_error
 
     # Color map for different optimizers
-    import colorsys
-
     # Collect all optimizer names for consistent colormap assignment
     all_optimizer_names = sorted(
         set(
@@ -552,10 +553,8 @@ def plot_combined(
         ax.tick_params(axis="y", which="both", labelleft=True)
 
     # Add figure title BEFORE legend for proper spacing
-    fig.suptitle(
-        f"{metric_keys[0].metric.display_name} for each Learning Rate",
-        fontsize=13,
-    )
+    strategy.apply_suptitle(
+        fig, f"{metric_keys[0].metric.display_name} for each Learning Rate")
 
     # Create single legend at the top (after suptitle)
     handles, labels = axes[0].get_legend_handles_labels()
@@ -570,6 +569,7 @@ def plot_combined(
 
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
+
 
 
 def plot_separate(
@@ -609,13 +609,13 @@ def plot_separate(
     ax.legend()
 
     # Add figure title
-    fig.suptitle(
-        f"{task.display_title}: {config.name}", fontsize=12, y=0.995
-    )
+    strategy.apply_suptitle(
+        fig, f"{task.display_title}: {config.name}")
 
     plt.tight_layout()
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
+
 
 
 def plot_hyperparam_grid(
@@ -627,17 +627,19 @@ def plot_hyperparam_grid(
     filepath: Path,
 ) -> None:
     """
-    Hyperparameter grid: rows=rho, cols=learning_rate.
-    Each subplot shows all optimizers at that (lr, rho) combination.
-    Legend is placed outside to avoid clutter.
+    Hyperparameter grid with improved color disambiguation.
+    Change: Uses Line Style + Opacity for Train/Test split instead of just Darkness.
     """
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
     metric_keys = task.keys
+    has_splits = any(key.split is not None for key in metric_keys)
+    is_loss_or_error = any(key.metric in (Metric.Loss, Metric.Error) for key in metric_keys)
+    show_split_styles = has_splits and is_loss_or_error
+
     nrows = len(rho_values)
     ncols = len(learning_rates)
 
-    # Create grid with shared axes
     fig, axes = plt.subplots(
         nrows,
         ncols,
@@ -648,10 +650,13 @@ def plot_hyperparam_grid(
         constrained_layout=True,
     )
 
-    # Color map for different optimizers
+    strategy.apply_suptitle(
+        fig, f"{task.display_title} Hyperparameter Grid (Rows=ρ, Cols=LR)")
+
+    # Use a high-contrast colormap (Set1 or Dark2 are better for lines than tab10)
+    # But sticking to tab10 for consistency with your other plots is fine if we fix the value issue.
     cmap = plt.get_cmap("tab10")
 
-    # Collect all optimizer types for consistent coloring
     all_optimizer_types = sorted(
         set(config.optimizer.name for config in results.keys())
     )
@@ -662,7 +667,6 @@ def plot_hyperparam_grid(
             ax = axes[row_idx, col_idx]
             strategy.configure_axis(ax, base_label=task.base_label)
 
-            # Find all configs with this lr and rho
             matching_configs = [
                 config
                 for config in results.keys()
@@ -689,27 +693,10 @@ def plot_hyperparam_grid(
             matching_configs.extend(base_optimizers_no_rho)
 
             if not matching_configs:
-                # Empty subplot - just show the parameter values
-                ax.text(
-                    0.5,
-                    0.5,
-                    "No data",
-                    ha="center",
-                    va="center",
-                    transform=ax.transAxes,
-                    fontsize=10,
-                    color="gray",
-                )
+                ax.text(0.5, 0.5, "No data", ha="center", va="center", transform=ax.transAxes, color="gray")
                 ax.set_xticks([])
                 ax.set_yticks([])
                 continue
-
-            # Determine if we should show train/test differentiation
-            has_splits = any(key.split is not None for key in metric_keys)
-            is_loss_or_error = any(
-                key.metric in (Metric.Loss, Metric.Error) for key in metric_keys
-            )
-            show_split_styles = has_splits and is_loss_or_error
 
             for config in matching_configs:
                 entry = results[config]
@@ -718,225 +705,134 @@ def plot_hyperparam_grid(
                 if not histories:
                     continue
 
-                color = opt_colors[config.optimizer.name]
-
-                # Group metric keys by split if applicable
+                # Get the base color for this optimizer
+                base_rgb = opt_colors[config.optimizer.name]
+                
                 if show_split_styles:
-                    import colorsys
-
-                    train_keys = [
-                        k for k in metric_keys if k.split == DatasetSplit.Train
-                    ]
+                    train_keys = [k for k in metric_keys if k.split == DatasetSplit.Train]
                     test_keys = [k for k in metric_keys if k.split == DatasetSplit.Test]
 
-                    # Convert base color to HSV for value adjustment
-                    r, g, b = color[:3]
-                    h, s, v = colorsys.rgb_to_hsv(r, g, b)
-
-                    # Plot train split (lighter value, solid line)
+                    # --- PLOT TRAIN (Background Context) ---
+                    # Strategy: Dashed line, lower opacity. 
+                    # We do NOT change the color hue/value drastically, keeping it recognizable.
                     for key in train_keys:
-                        all_values: List[np.ndarray] = []
-                        steps: Optional[np.ndarray] = None
-
-                        for h_obj in histories:
-                            h_cpu = h_obj.copy_cpu()
-                            vals = np.array(h_cpu.get(key))
-                            curr_steps = np.array(h_cpu.get_steps())
-                            all_values.append(vals)
-                            if steps is None or len(curr_steps) > len(steps):
-                                steps = curr_steps
-
+                        all_values, steps = _collect_data(histories, key)
                         if all_values and steps is not None:
-                            min_len = min(len(v) for v in all_values)
-                            truncated = np.stack([v[:min_len] for v in all_values])
-                            mean_vals = np.mean(truncated, axis=0)
-                            mean_steps = steps[:min_len]
-
-                            # Lighter color for train (increase value)
-                            train_v = min(v * 1.3, 1.0)  # Make lighter but cap at 1.0
-                            train_color = colorsys.hsv_to_rgb(h, s, train_v)
-
-                            label = config.optimizer.name
+                            mean_vals, mean_steps = _aggregate_runs(all_values, steps)
+                            
                             ctx = PlotContext(
                                 ax=ax,
                                 x=mean_steps,
                                 y=mean_vals,
-                                label=label,
+                                label=f"{config.optimizer.name} (Train)",
                                 plot_kwargs={
-                                    "color": train_color,
-                                    "alpha": 0.9,
-                                    "linestyle": "-",
+                                    "color": base_rgb,
+                                    "alpha": 0.5,       # Make it visually recessive
+                                    "linestyle": "--",  # Distinct texture
+                                    "linewidth": 1.5,
                                 },
                             )
                             strategy.plot(ctx)
 
-                    # Plot test split (darker value, solid line)
+                    # --- PLOT TEST (Foreground Focus) ---
+                    # Strategy: Solid line, full opacity. 
+                    # This fixes the "muddy" issue by keeping colors vivid.
                     for key in test_keys:
-                        all_values = []
-                        steps = None
-
-                        for h_obj in histories:
-                            h_cpu = h_obj.copy_cpu()
-                            vals = np.array(h_cpu.get(key))
-                            curr_steps = np.array(h_cpu.get_steps())
-                            all_values.append(vals)
-                            if steps is None or len(curr_steps) > len(steps):
-                                steps = curr_steps
-
+                        all_values, steps = _collect_data(histories, key)
                         if all_values and steps is not None:
-                            min_len = min(len(v) for v in all_values)
-                            truncated = np.stack([v[:min_len] for v in all_values])
-                            mean_vals = np.mean(truncated, axis=0)
-                            mean_steps = steps[:min_len]
+                            mean_vals, mean_steps = _aggregate_runs(all_values, steps)
 
-                            # Darker color for test (decrease value)
-                            test_v = v * 0.7  # Make darker
-                            test_color = colorsys.hsv_to_rgb(h, s, test_v)
-
-                            # Plot with solid line (no markers, no label to avoid duplicates)
                             ctx = PlotContext(
                                 ax=ax,
                                 x=mean_steps,
                                 y=mean_vals,
-                                label="",  # Don't duplicate in legend
+                                label=f"{config.optimizer.name} (Test)", # Label this one for the legend
                                 plot_kwargs={
-                                    "color": test_color,
-                                    "alpha": 0.9,
-                                    "linestyle": "-",
+                                    "color": base_rgb,
+                                    "alpha": 1.0,       # Full saturation/visibility
+                                    "linestyle": "-",   # Solid
+                                    "linewidth": 2.0,   # Slightly thicker
                                 },
                             )
                             strategy.plot(ctx)
 
                 else:
-                    # No split differentiation (reference metrics or single split)
+                    # No split differentiation
                     for key in metric_keys:
-                        all_values = []
-                        steps = None
-
-                        for h in histories:
-                            h_cpu = h.copy_cpu()
-                            vals = np.array(h_cpu.get(key))
-                            curr_steps = np.array(h_cpu.get_steps())
-                            all_values.append(vals)
-                            if steps is None or len(curr_steps) > len(steps):
-                                steps = curr_steps
-
+                        all_values, steps = _collect_data(histories, key)
                         if all_values and steps is not None:
-                            min_len = min(len(v) for v in all_values)
-                            truncated = np.stack([v[:min_len] for v in all_values])
-                            mean_vals = np.mean(truncated, axis=0)
-                            mean_steps = steps[:min_len]
-
+                            mean_vals, mean_steps = _aggregate_runs(all_values, steps)
                             ctx = PlotContext(
-                                ax=ax,
-                                x=mean_steps,
-                                y=mean_vals,
+                                ax=ax, x=mean_steps, y=mean_vals,
                                 label=config.optimizer.name,
-                                plot_kwargs={
-                                    "color": color,
-                                    "alpha": 1.0,
-                                    "linestyle": "-",
-                                },
+                                plot_kwargs={"color": base_rgb, "alpha": 1.0, "linestyle": "-"},
                             )
                             strategy.plot(ctx)
 
-            # Titles for top row (learning rates)
             if row_idx == 0:
                 ax.set_title(f"lr={lr}", fontsize=10)
-
-            # Y-labels for leftmost column (rho values)
             if col_idx == 0:
                 ax.set_ylabel(f"rho={rho}\n{task.display_title}", fontsize=9)
-
-            # X-labels for bottom row
             if row_idx == nrows - 1:
                 ax.set_xlabel("Steps", fontsize=9)
 
-    # Explicitly enable y-tick labels on all subplots
     for row in axes:
         for ax in row:
             ax.tick_params(axis="y", which="both", labelleft=True)
             ax.tick_params(labelsize=8)
 
-    # Determine if we showed train/test differentiation
-    has_splits = any(key.split is not None for key in metric_keys)
-    is_loss_or_error = any(
-        key.metric in (Metric.Loss, Metric.Error) for key in metric_keys
-    )
-    show_split_styles = has_splits and is_loss_or_error
-
-    # Add figure title BEFORE legend for proper spacing
-    fig.suptitle(
-        f"{task.display_title} Hyperparameter Grid (Rows=ρ, Cols=LR)",
-        fontsize=14,
-    )
-
-    # Create legends at the top (after suptitle)
-    # 1. Optimizer legend (horizontal at top)
+    # 1. Optimizer Legend (Colors)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-
-    # 2. Train/test legend if applicable
-    if show_split_styles:
-        from matplotlib.lines import Line2D
-
-        # Show lighter color for train, darker for test
-        legend_elements = [
-            Line2D(
-                [0],
-                [0],
-                color=(0.7, 0.7, 0.7),
-                linestyle="-",
-                linewidth=2,
-                label="Train (lighter)",
-            ),
-            Line2D(
-                [0],
-                [0],
-                color=(0.3, 0.3, 0.3),
-                linestyle="-",
-                linewidth=2,
-                label="Test (darker)",
-            ),
+    # Filter duplicates from legend
+    by_label = dict(zip(labels, handles))
+    
+    if has_splits:
+        # 2. Split Legend (Line Styles) - Manually created
+        style_handles = [
+            Line2D([0], [0], color='black', linestyle='-', linewidth=2, label='Test (Solid)'),
+            Line2D([0], [0], color='black', linestyle='--', linewidth=2, alpha=0.5, label='Train (Dashed)'),
+            Line2D([0], [0], color='none', label=' ') # Spacer
         ]
+    else:
+        style_handles = []
+    
+    # Combine
+    final_handles = style_handles + list(by_label.values())
+    final_labels = [h.get_label() for h in style_handles] + list(by_label.keys())
 
-        # Combine train/test legend with optimizer legend
-        if handles:
-            # Add separator and optimizer labels
-            combined_elements = legend_elements + [Line2D([0], [0], color='none', label=' ')] + handles
-            combined_labels = ["Train (lighter)", "Test (darker)", " "] + labels
-
-            fig.legend(
-                combined_elements,
-                combined_labels,
-                loc="outside upper center",
-                ncol=min(len(combined_elements), 5),
-                fontsize=9,
-                frameon=True,
-            )
-        else:
-            # Just train/test legend
-            fig.legend(
-                handles=legend_elements,
-                loc="outside upper center",
-                ncol=2,
-                fontsize=9,
-                frameon=True,
-            )
-    elif handles:
-        # Just optimizer legend
-        fig.legend(
-            handles,
-            labels,
-            loc="outside upper center",
-            ncol=min(len(labels), 5),
-            title="Optimizers",
-            fontsize=9,
-            frameon=True,
-        )
+    fig.legend(
+        final_handles,
+        final_labels,
+        loc="outside upper center",
+        ncol=min(len(final_labels), 6),
+        fontsize=9,
+        frameon=True,
+    )
 
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
     plt.close()
 
+# --- Helper functions to keep the code clean ---
+def _collect_data(histories, key):
+    all_values = []
+    steps = None
+    for h_obj in histories:
+        h_cpu = h_obj.copy_cpu()
+        vals = np.array(h_cpu.get(key))
+        curr_steps = np.array(h_cpu.get_steps())
+        all_values.append(vals)
+        if steps is None or len(curr_steps) > len(steps):
+            steps = curr_steps
+    return all_values, steps
+
+def _aggregate_runs(all_values, steps):
+    min_len = min(len(v) for v in all_values)
+    truncated = np.stack([v[:min_len] for v in all_values])
+    mean_vals = np.mean(truncated, axis=0)
+    mean_steps = steps[:min_len]
+    return mean_vals, mean_steps
+
+# -------------------------------------------
 
 def plot_stability_analysis(
     results: ResultsType,
@@ -961,15 +857,8 @@ def plot_stability_analysis(
 
     # Extract stability metrics from task
     metric_keys = task.keys
-    stability_metrics_set = {Metric.WeightNorm, Metric.UpdateNorm, Metric.WeightLossRatio}
-    metrics_in_task = [k.metric for k in metric_keys if k.metric in stability_metrics_set]
-
-    if not metrics_in_task:
-        return
-
-    # Use standard order if all 3 are present
-    metrics = [Metric.WeightNorm, Metric.UpdateNorm, Metric.WeightLossRatio]
-    metrics = [m for m in metrics if m in metrics_in_task]
+    stability_metrics = [Metric.WeightNorm, Metric.UpdateNorm, Metric.WeightLossRatioaaaa]
+    metrics = [k.metric for k in metric_keys if k.metric in stability_metrics]
 
     if not metrics:
         return
@@ -988,10 +877,6 @@ def plot_stability_analysis(
     )
 
     # --- Color Setup (Hue=LR, Lightness=Rho) ---
-    import colorsys
-    from matplotlib.lines import Line2D
-    from matplotlib.patches import Patch
-
     all_configs = list(results.keys())
     all_lrs = sorted(set(c.learning_rate for c in all_configs))
     all_rhos = sorted(set(c.get(Hyperparam.Rho, 0.0) for c in all_configs if c.get(Hyperparam.Rho) is not None))
@@ -1049,20 +934,28 @@ def plot_stability_analysis(
 
                     histories = _get_histories(results[config])
                     color = get_color(config.learning_rate, config.get(Hyperparam.Rho, 0.0))
+                    strategy = metric.strategy
 
                     for h in histories:
                         h_cpu = h.copy_cpu()
-                        steps = h_cpu.get_steps()
-                        steps_arr = np.array(steps)
+                        steps = h_cpu.get_steps().numpy()
 
                         for key in m_keys:
                             if key in h_cpu.metric_keys:
-                                values = h_cpu.get(key)
-                                values_arr = np.array(values)
-                                ax.plot(steps_arr, values_arr, color=color, alpha=0.8)
-
-                # Titles: Show optimizer and metric
-                ax.set_title(f"{opt.name}: {metric.name}", fontsize=11)
+                                values = h_cpu.get(key).numpy()
+                                ctx = PlotContext(
+                                    ax=ax,
+                                    x=steps,
+                                    y=values,
+                                    # Titles: Show optimizer and metric
+                                    label=f"{opt.name}: {metric.name}",
+                                    plot_kwargs={
+                                        "color": color,
+                                        "alpha": 0.7,
+                                        "linestyle": "-",
+                                    },
+                                )
+                                strategy.plot(ctx)
 
                 # Y Labels: Only on left column (group 0 - base optimizer)
                 if group_idx == 0:
@@ -1097,7 +990,7 @@ def plot_stability_analysis(
             c = get_color(sample_lr, rho)
             legend_elements.append(Line2D([0], [0], color=c, lw=3, label=f"  ρ={rho}"))
 
-    fig.suptitle(f"Stability Analysis: {task.display_title}", fontsize=14)
+    fig.suptitle(f"Stability Analysis: {task.display_title}", fontsize=14, y=1.20)
 
     if legend_elements:
         fig.legend(
@@ -1170,8 +1063,6 @@ def plot_sam_comparison(
     all_lrs = sorted(set(c.learning_rate for c in all_configs))
 
     # Color mapping: learning rate → hue, rho → lightness
-    import colorsys
-
     lr_cmap = plt.get_cmap("tab10")
 
     # Assign each learning rate a hue from qualitative palette
@@ -1316,9 +1207,6 @@ def plot_sam_comparison(
         axes[row_idx, 0].tick_params(axis="y", which="both", labelleft=True)
 
     # Add legend showing learning rate colors and rho lightness
-    from matplotlib.lines import Line2D
-    from matplotlib.patches import Patch
-
     legend_elements = []
 
     # Add learning rate color indicators (hue)
@@ -1356,11 +1244,7 @@ def plot_sam_comparison(
                     Line2D([0], [0], color=color, linewidth=3, label=f"  ρ={rho:.2g}")
                 )
 
-    # Add figure title BEFORE legend for proper spacing
-    fig.suptitle(
-        f"{task.display_title}: Base vs SAM Variants",
-        fontsize=14,
-    )
+    strategy.apply_suptitle(fig, f"{task.display_title}: Base vs SAM Variants")
 
     # Add legend at the top (after suptitle)
     if legend_elements:
@@ -1598,3 +1482,4 @@ def save_results_npz(
                 data[npz_key] = values
 
     np.savez(filepath, **data)  # type: ignore[call-arg]
+
