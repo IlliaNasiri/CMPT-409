@@ -16,6 +16,8 @@ from typing import Optional, List, Union, Tuple, Any, TYPE_CHECKING
 import numpy as np
 import matplotlib.pyplot as plt
 
+from engine.constants import GRAD_TOL
+
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
@@ -43,13 +45,13 @@ class Transform(ABC):
 
 
 class SafeLog(Transform):
-    """Clamp to epsilon before log to prevent log(0)."""
+    """Clamp to minimum value before log to prevent log(0)."""
 
-    def __init__(self, eps: float = 1e-16):
-        self.eps = eps
+    def __init__(self, min_val: float = GRAD_TOL):
+        self.min_val = min_val
 
     def __call__(self, values: np.ndarray) -> np.ndarray:
-        return np.maximum(values, self.eps)
+        return np.maximum(values, self.min_val)
 
 
 class Scale(Transform):
@@ -149,13 +151,26 @@ class PlotStrategy:
         y_transformed = self.process_values(ctx.y)
         ctx.ax.plot(ctx.x, y_transformed, **style)
 
+    def apply_suptitle(self, fig: Any, title: str, fontsize: int = 13, **kwargs) -> None:
+        """Apply a suptitle with proper spacing to avoid legend overlap.
+
+        Args:
+            fig: Matplotlib figure object
+            title: Title text
+            fontsize: Font size for title (default 13)
+            **kwargs: Additional keyword arguments to pass to fig.suptitle()
+        """
+        # Default y=0.98 to leave room for legend above title, but allow override
+        y = kwargs.pop("y", 0.98)
+        fig.suptitle(title, fontsize=fontsize, y=y, **kwargs)
+
 
 # Factory Functions (Presets)
 
 
-def LogLogStrategy(eps: float = 1e-16, **kwargs) -> PlotStrategy:
+def LogLogStrategy(min_val: float = GRAD_TOL, **kwargs) -> PlotStrategy:
     """Preset for Log-Log plots (Loss, Angle, Distance)."""
-    base_transforms = [SafeLog(eps=eps)]
+    base_transforms = [SafeLog(min_val=min_val)]
     user_transforms = kwargs.pop("transforms", [])
     return PlotStrategy(
         transforms=base_transforms + user_transforms,

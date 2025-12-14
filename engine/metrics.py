@@ -169,18 +169,19 @@ def get_weight_norm(model: Model) -> torch.Tensor:
     Returns:
         0-d tensor containing the weight norm
     """
-    if hasattr(model, "w"):
-        return model.w.norm()
+    with torch.no_grad():
+        if hasattr(model, "w"):
+            return model.w.norm()
 
-    # Handle autograd models: compute norm across all parameters
-    param = next(model.parameters(), None)
-    if param is None:
-        return torch.tensor(0.0, device=None, dtype=torch.float32)
+        # Handle autograd models: compute norm across all parameters
+        param = next(model.parameters(), None)
+        if param is None:
+            return torch.tensor(0.0, device=None, dtype=torch.float64, requires_grad=False)
 
-    total = torch.zeros((), device=param.device, dtype=param.dtype)
-    for p in model.parameters():
-        total = total + p.norm() ** 2
-    return total.sqrt()
+        total = torch.zeros((), device=param.device, dtype=param.dtype, requires_grad=False)
+        for p in model.parameters():
+            total = total + p.norm() ** 2
+        return total.sqrt()
 
 
 # Placeholder signature for update_norm tracking
@@ -196,9 +197,10 @@ def compute_update_norm(w_current: torch.Tensor, w_prev: Optional[torch.Tensor])
     Returns:
         0-d tensor containing the update norm
     """
-    if w_prev is None:
-        return torch.tensor(0.0, device=w_current.device, dtype=w_current.dtype)
-    return (w_current - w_prev).norm()
+    with torch.no_grad():
+        if w_prev is None:
+            return torch.zeros((), device=w_current.device, dtype=w_current.dtype, requires_grad=False)
+        return (w_current - w_prev).norm()
 
 
 # -----------------------------------------------------------------------------
@@ -244,6 +246,7 @@ class MetricsCollector:
         # Get model weights (lazily, only if needed)
         w_eff = None
 
+        # First pass: reference metrics and dataset metrics (Loss, Error)
         for metric, metric_fn in self.metric_fns.items():
             if metric.requires_reference:
                 # Reference metrics (Angle, Distance): compare w vs w_star
@@ -257,39 +260,49 @@ class MetricsCollector:
                 value = metric_fn(w_eff, self.w_star)
                 key = MetricKey(metric=metric, split=None)
                 results[key] = value
-            else:
-                # Dataset metrics (Loss, Error, stability metrics): compute on each split
+
+            elif metric.requires_split:
+                # Dataset metrics (Loss, Error): compute on each split
                 for split, (X, y) in datasets.items():
                     # Forward pass
                     with torch.no_grad():
                         scores = model.forward(X)
 
-                    # Compute metric (handling stability metrics specially)
-                    if metric == Metric.WeightNorm:
-                        value = get_weight_norm(model).item()
-                    elif metric == Metric.UpdateNorm:
-                        w_eff_for_update = self._get_effective_weight(model)
-                        value = compute_update_norm(w_eff_for_update, self.w_prev).item()
-                        # Update w_prev after computing update norm
-                        if split == DatasetSplit.Train:
-                            self.w_prev = w_eff_for_update.clone()
-                    elif metric == Metric.WeightLossRatio:
-                        # Reuse loss from Loss metric computation
-                        if isinstance(metric_fn, torch.Tensor):
-                            loss_val = metric_fn
-                        else:
-                            # Assume metric_fn is a loss function
-                            loss_val = metric_fn(scores, y)
-                            if not isinstance(loss_val, float):
-                                loss_val = loss_val.item() if hasattr(loss_val, 'item') else float(loss_val)
-                        w_norm = get_weight_norm(model).item()
-                        value = w_norm / (loss_val + 1e-16)
-                    else:
-                        # Regular metric computation
-                        value = metric_fn(scores, y)
-
+                    # Compute metric
+                    value = metric_fn(scores, y)
                     key = MetricKey(metric=metric, split=split)
                     results[key] = value
+
+        # Second pass: stability metrics (may reference results from first pass)
+        for metric, metric_fn in self.metric_fns.items():
+            if metric.requires_model_artifact:
+                # Stability metrics: computed once per iteration, no dataset splits
+                # Keep as tensors to avoid CPU synchronization
+                if metric == Metric.WeightNorm:
+                    value = get_weight_norm(model)
+                elif metric == Metric.UpdateNorm:
+                    w_eff_for_update = self._get_effective_weight(model)
+                    value = compute_update_norm(w_eff_for_update, self.w_prev)
+                    self.w_prev = w_eff_for_update.clone()
+                elif metric == Metric.WeightLossRatio:
+                    w_norm = get_weight_norm(model)
+                    # Reuse loss from results if already computed
+                    loss_key = MetricKey(metric=Metric.Loss, split=DatasetSplit.Train)
+                    if loss_key in results:
+                        loss_val = results[loss_key]
+                    else:
+                        # Compute loss if not available
+                        X, y = datasets[DatasetSplit.Train]
+                        with torch.no_grad():
+                            scores = model.forward(X)
+                        loss_val = metric_fn(scores, y)
+                    # Compute ratio: w_norm / loss (tensor operation)
+                    value = w_norm / loss_val
+                else:
+                    continue
+
+                key = MetricKey(metric=metric, split=None)
+                results[key] = value
 
         return results
 
@@ -320,7 +333,7 @@ class MetricsCollector:
         """
         keys = []
         for metric in self.metric_fns.keys():
-            if metric.requires_reference:
+            if not metric.requires_split:
                 # Reference metrics: one key without split
                 keys.append(MetricKey(metric=metric, split=None))
             else:

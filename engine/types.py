@@ -40,8 +40,30 @@ class Metric(Enum):
 
     @property
     def requires_reference(self) -> bool:
-        """Metrics like Angle/Distance need w_star. Stability metrics need dataset splits."""
+        """Metrics like Angle/Distance need w_star. Stability metrics need model weights and the Metric.Loss."""
         return self in (Metric.Angle, Metric.Distance)
+
+    @property
+    def requires_model_artifact(self) -> bool:
+        """Metrics computed from model artifacts during training (weights, updates, ratios).
+
+        These are model-state properties tracked for numerical stability analysis,
+        independent of dataset splits.
+        """
+        return self in (
+            Metric.WeightNorm,
+            Metric.UpdateNorm,
+            Metric.WeightLossRatio,
+        )
+
+    @property
+    def requires_split(self) -> bool:
+        """Whether this metric needs to be computed separately for train/test splits.
+
+        Returns False for reference metrics and model artifact metrics.
+        Returns True for dataset metrics (Loss, Error).
+        """
+        return not (self.requires_model_artifact or self.requires_reference)
 
     @property
     def strategy(self) -> PlotStrategy:
@@ -152,14 +174,14 @@ class MetricKey:
         """
         Validates the metric/split combination immediately upon creation.
         """
-        # Validate: reference metrics must have split=None
-        if self.metric.requires_reference and self.split is not None:
+        # Validate: metrics that don't require split must have split=None
+        if not self.metric.requires_split and self.split is not None:
             raise ValueError(
-                f"Metric '{self.metric.name}' is a reference metric; split must be None."
+                f"Metric '{self.metric.name}' does not require a dataset split; split must be None."
             )
 
-        # Validate: non-reference metrics must have a split
-        if not self.metric.requires_reference and self.split is None:
+        # Validate: metrics that require split must have a split
+        if self.metric.requires_split and self.split is None:
             raise ValueError(
                 f"Metric '{self.metric.name}' requires a specific dataset split."
             )

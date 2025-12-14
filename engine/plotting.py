@@ -30,6 +30,11 @@ class PlotTask:
     filename_prefix: str    # e.g., "train_loss" or "loss"
     display_title: str      # e.g., "Train Loss" or "Loss"
 
+    @property
+    def base_label(self) -> str:
+        """Return raw metric name to avoid double-application of strategy suffix."""
+        return self.keys[0].metric.name if self.keys else self.display_title
+
 
 def plot_all(
     results: ResultsType,
@@ -212,8 +217,8 @@ def plot_all(
                 )
 
     # Detect if we have stability metrics and dispatch stability analysis
-    stability_metrics_enum = {Metric.WeightNorm, Metric.UpdateNorm, Metric.WeightLossRatio}
-    stability_keys = [k for k in metric_keys if k.metric in stability_metrics_enum]
+    # Stability metrics should have split=None
+    stability_keys = [k for k in metric_keys if k.metric.requires_model_artifact and k.split is None]
 
     if stability_keys:
         stability_task = PlotTask(
@@ -370,6 +375,7 @@ def plot_aggregated(
     fig.suptitle(
         f"{split_prefix}{key.metric.display_name} Comparison for each Optimizer{repeat_text}",
         fontsize=13,
+        y=0.98,
     )
 
     # Create single legend above the plots (after suptitle for proper spacing)
@@ -578,7 +584,7 @@ def plot_separate(
 
     metric_keys = task.keys
     fig, ax = plt.subplots(figsize=(8, 6))
-    strategy.configure_axis(ax, base_label=task.display_title)
+    strategy.configure_axis(ax, base_label=task.base_label)
 
     entry = results[config]
     histories = _get_histories(entry)
@@ -654,7 +660,7 @@ def plot_hyperparam_grid(
     for row_idx, rho in enumerate(rho_values):
         for col_idx, lr in enumerate(learning_rates):
             ax = axes[row_idx, col_idx]
-            strategy.configure_axis(ax, base_label=task.display_title)
+            strategy.configure_axis(ax, base_label=task.base_label)
 
             # Find all configs with this lr and rho
             matching_configs = [
@@ -664,14 +670,21 @@ def plot_hyperparam_grid(
                 and config.get(Hyperparam.Rho, None) == rho
             ]
 
-            # Also include base optimizers (GD, NGD, Adam, AdaGrad) with this lr but no rho
+            # Also include base optimizers (non-SAM variants) with this lr but no rho
             # They appear on every rho row since they're not SAM variants
             base_optimizers_no_rho = [
                 config
                 for config in results.keys()
                 if config.learning_rate == lr
                 and config.get(Hyperparam.Rho, None) is None
-                and config.optimizer in (Optimizer.GD, Optimizer.NGD, Optimizer.Adam, Optimizer.AdaGrad)
+                and config.optimizer in (
+                    Optimizer.GD,
+                    Optimizer.NGD,          # Backward compatibility
+                    Optimizer.LossNGD,      # New
+                    Optimizer.VecNGD,       # New
+                    Optimizer.Adam,
+                    Optimizer.AdaGrad
+                )
             ]
             matching_configs.extend(base_optimizers_no_rho)
 
@@ -690,13 +703,6 @@ def plot_hyperparam_grid(
                 ax.set_xticks([])
                 ax.set_yticks([])
                 continue
-
-            # Check if we are plotting stability metrics to force log scale
-            stability_metrics = {Metric.WeightNorm, Metric.UpdateNorm, Metric.WeightLossRatio}
-            is_stability = task.metric in stability_metrics
-            if is_stability:
-                ax.set_yscale("log")
-                ax.grid(True, alpha=0.3)
 
             # Determine if we should show train/test differentiation
             has_splits = any(key.split is not None for key in metric_keys)
@@ -1028,12 +1034,12 @@ def plot_stability_analysis(
             for m_idx, metric in enumerate(metrics):
                 ax = axes[row_idx, col_offset + m_idx]
 
-                # Manual Log Scale application
-                ax.set_yscale("log")
-                ax.grid(True, alpha=0.3)
-
                 # Filter metric keys for this specific metric
                 m_keys = [k for k in task.keys if k.metric == metric]
+
+                # Stability metrics should not have splits
+                assert all(k.split is None for k in m_keys), \
+                    f"Stability metric {metric.name} should not have dataset splits"
 
                 # Plot data
                 for config in configs:
@@ -1201,7 +1207,7 @@ def plot_sam_comparison(
 
         for col_idx, opt in enumerate([base_opt, sam_opt]):
             ax = axes[row_idx, col_idx]
-            strategy.configure_axis(ax, base_label=task.display_title)
+            strategy.configure_axis(ax, base_label=task.base_label)
 
             # Get all configs for this optimizer
             opt_configs = [c for c in results.keys() if c.optimizer == opt]
