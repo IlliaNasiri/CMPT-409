@@ -27,11 +27,14 @@ from engine import (
 
 from engine.optimizers import (
     step_sgd,
-    step_ngd_stable,
+    step_loss_ngd,
+    step_vec_ngd,
     step_sam_stable,
-    step_sam_ngd_stable,
+    step_sam_loss_ngd,
+    step_sam_vec_ngd,
     make_optimizer_factory,
 )
+from engine.metrics import get_weight_norm, compute_update_norm
 from engine.plotting import plot_all
 
 cpu_count = os.cpu_count()
@@ -68,6 +71,9 @@ def main():
                 Metric.Error: get_error_rate,
                 Metric.Angle: get_angle,
                 Metric.Distance: get_direction_distance,
+                Metric.WeightNorm: get_weight_norm,
+                Metric.UpdateNorm: compute_update_norm,
+                Metric.WeightLossRatio: loss_fn,  # Reuse loss_fn for ratio computation
             },
             w_star=w_star,
         )
@@ -76,9 +82,11 @@ def main():
     # All optimizers use the same configured loss function
     optimizer_factories = {
         Optimizer.GD: make_optimizer_factory(step_sgd, loss=loss_fn),
-        Optimizer.NGD: make_optimizer_factory(step_ngd_stable, loss=loss_fn),
+        Optimizer.LossNGD: make_optimizer_factory(step_loss_ngd, loss=loss_fn),
+        Optimizer.VecNGD: make_optimizer_factory(step_vec_ngd, loss=loss_fn),
         Optimizer.SAM: make_optimizer_factory(step_sam_stable, loss=loss_fn),
-        Optimizer.SAM_NGD: make_optimizer_factory(step_sam_ngd_stable, loss=loss_fn),
+        Optimizer.SAM_LossNGD: make_optimizer_factory(step_sam_loss_ngd, loss=loss_fn),
+        Optimizer.SAM_VecNGD: make_optimizer_factory(step_sam_vec_ngd, loss=loss_fn),
     }
 
     # === Hyperparameter sweeps ===
@@ -89,14 +97,21 @@ def main():
         Optimizer.GD: {
             Hyperparam.LearningRate: learning_rates,
         },
-        Optimizer.NGD: {
+        Optimizer.LossNGD: {
+            Hyperparam.LearningRate: learning_rates,
+        },
+        Optimizer.VecNGD: {
             Hyperparam.LearningRate: learning_rates,
         },
         Optimizer.SAM: {
             Hyperparam.LearningRate: learning_rates,
             Hyperparam.Rho: rho_values,
         },
-        Optimizer.SAM_NGD: {
+        Optimizer.SAM_LossNGD: {
+            Hyperparam.LearningRate: learning_rates,
+            Hyperparam.Rho: rho_values,
+        },
+        Optimizer.SAM_VecNGD: {
             Hyperparam.LearningRate: learning_rates,
             Hyperparam.Rho: rho_values,
         },

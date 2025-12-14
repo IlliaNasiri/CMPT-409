@@ -28,6 +28,9 @@ class Metric(Enum):
     Error = ("error", PercentageStrategy())
     Angle = ("angle", LogLogStrategy())
     Distance = ("dist", LogLogStrategy())
+    WeightNorm = ("weight_norm", LogLogStrategy())
+    WeightLossRatio = ("weight_loss_ratio", LogLogStrategy())
+    UpdateNorm = ("update_norm", LogLogStrategy())
 
     def __new__(cls, value: str, strategy: PlotStrategy):
         obj = object.__new__(cls)
@@ -37,7 +40,7 @@ class Metric(Enum):
 
     @property
     def requires_reference(self) -> bool:
-        """Metrics like Angle/Distance need w_star."""
+        """Metrics like Angle/Distance need w_star. Stability metrics need dataset splits."""
         return self in (Metric.Angle, Metric.Distance)
 
     @property
@@ -54,12 +57,17 @@ class Metric(Enum):
 class Optimizer(Enum):
     GD = auto()
     SAM = auto()
-    NGD = auto()
-    SAM_NGD = auto()
+    LossNGD = auto()
+    VecNGD = auto()
+    SAM_LossNGD = auto()
+    SAM_VecNGD = auto()
     Adam = auto()
     AdaGrad = auto()
     SAM_Adam = auto()
     SAM_AdaGrad = auto()
+    # Backward compatibility aliases
+    NGD = auto()
+    SAM_NGD = auto()
 
 
 class Hyperparam(Enum):

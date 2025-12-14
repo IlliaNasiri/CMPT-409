@@ -1,10 +1,15 @@
 from .first_order import (
     step_gd,
     step_sgd,
-    step_ngd_stable,
+    step_loss_ngd,
+    step_vec_ngd,
     step_sam_stable,
-    step_sam_ngd_stable,
+    step_sam_loss_ngd,
+    step_sam_vec_ngd,
 )
+# Backward compatibility aliases
+step_ngd_stable = step_loss_ngd
+step_sam_ngd_stable = step_sam_loss_ngd
 from .adaptive import (
     Adam,
     AdaGrad,
@@ -35,9 +40,13 @@ from .base import (
 __all__ = [
     "step_gd",
     "step_sgd",
-    "step_ngd_stable",
+    "step_loss_ngd",
+    "step_vec_ngd",
     "step_sam_stable",
-    "step_sam_ngd_stable",
+    "step_sam_loss_ngd",
+    "step_sam_vec_ngd",
+    "step_ngd_stable",  # Backward compatibility
+    "step_sam_ngd_stable",  # Backward compatibility
     "make_optimizer",
     "make_optimizer_factory",
     "OptimizerState",

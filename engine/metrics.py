@@ -151,6 +151,57 @@ def get_error_rate(scores: torch.Tensor, y: torch.Tensor) -> float:
 
 
 # -----------------------------------------------------------------------------
+# Stability Metrics (W_norm, UpdateNorm, Weight/Loss Ratio)
+# -----------------------------------------------------------------------------
+
+
+def get_weight_norm(model: Model) -> torch.Tensor:
+    """
+    Compute L2 norm of model weights as a 0-d tensor.
+
+    Avoids CPU synchronization by returning a tensor instead of float.
+    For linear models, returns ||w||. For general models, returns
+    the total norm across all parameters.
+
+    Args:
+        model: Model to compute norm of
+
+    Returns:
+        0-d tensor containing the weight norm
+    """
+    if hasattr(model, "w"):
+        return model.w.norm()
+
+    # Handle autograd models: compute norm across all parameters
+    param = next(model.parameters(), None)
+    if param is None:
+        return torch.tensor(0.0, device=None, dtype=torch.float32)
+
+    total = torch.zeros((), device=param.device, dtype=param.dtype)
+    for p in model.parameters():
+        total = total + p.norm() ** 2
+    return total.sqrt()
+
+
+# Placeholder signature for update_norm tracking
+# This will be populated during compute_all
+def compute_update_norm(w_current: torch.Tensor, w_prev: Optional[torch.Tensor]) -> torch.Tensor:
+    """
+    Compute the norm of the weight update.
+
+    Args:
+        w_current: Current weight vector
+        w_prev: Previous weight vector (None if first call)
+
+    Returns:
+        0-d tensor containing the update norm
+    """
+    if w_prev is None:
+        return torch.tensor(0.0, device=w_current.device, dtype=w_current.dtype)
+    return (w_current - w_prev).norm()
+
+
+# -----------------------------------------------------------------------------
 # MetricsCollector
 # -----------------------------------------------------------------------------
 
@@ -171,6 +222,7 @@ class MetricsCollector:
         """
         self.metric_fns = metric_fns
         self.w_star = w_star
+        self.w_prev = None  # Track previous weights for UpdateNorm stability metric
 
     def compute_all(
         self,
@@ -206,14 +258,36 @@ class MetricsCollector:
                 key = MetricKey(metric=metric, split=None)
                 results[key] = value
             else:
-                # Dataset metrics (Loss, Error): compute on each split
+                # Dataset metrics (Loss, Error, stability metrics): compute on each split
                 for split, (X, y) in datasets.items():
                     # Forward pass
                     with torch.no_grad():
                         scores = model.forward(X)
 
-                    # Compute metric
-                    value = metric_fn(scores, y)
+                    # Compute metric (handling stability metrics specially)
+                    if metric == Metric.WeightNorm:
+                        value = get_weight_norm(model).item()
+                    elif metric == Metric.UpdateNorm:
+                        w_eff_for_update = self._get_effective_weight(model)
+                        value = compute_update_norm(w_eff_for_update, self.w_prev).item()
+                        # Update w_prev after computing update norm
+                        if split == DatasetSplit.Train:
+                            self.w_prev = w_eff_for_update.clone()
+                    elif metric == Metric.WeightLossRatio:
+                        # Reuse loss from Loss metric computation
+                        if isinstance(metric_fn, torch.Tensor):
+                            loss_val = metric_fn
+                        else:
+                            # Assume metric_fn is a loss function
+                            loss_val = metric_fn(scores, y)
+                            if not isinstance(loss_val, float):
+                                loss_val = loss_val.item() if hasattr(loss_val, 'item') else float(loss_val)
+                        w_norm = get_weight_norm(model).item()
+                        value = w_norm / (loss_val + 1e-16)
+                    else:
+                        # Regular metric computation
+                        value = metric_fn(scores, y)
+
                     key = MetricKey(metric=metric, split=split)
                     results[key] = value
 

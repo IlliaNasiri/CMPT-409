@@ -211,6 +211,24 @@ def plot_all(
                     get_path("sam_comparison", "_sam_comparison")
                 )
 
+    # Detect if we have stability metrics and dispatch stability analysis
+    stability_metrics_enum = {Metric.WeightNorm, Metric.UpdateNorm, Metric.WeightLossRatio}
+    stability_keys = [k for k in metric_keys if k.metric in stability_metrics_enum]
+
+    if stability_keys:
+        stability_task = PlotTask(
+            metric=Metric.WeightNorm,  # Placeholder Metric type for the group
+            keys=stability_keys,
+            filename_prefix="stability_analysis",
+            display_title="Numerical Stability Metrics"
+        )
+
+        plot_stability_analysis(
+            results,
+            stability_task,
+            base_dir / "sam_comparison" / "stability_analysis.png"
+        )
+
 
 def _get_history(
     entry: Union[TrainingHistory, List[TrainingHistory]],
@@ -673,6 +691,13 @@ def plot_hyperparam_grid(
                 ax.set_yticks([])
                 continue
 
+            # Check if we are plotting stability metrics to force log scale
+            stability_metrics = {Metric.WeightNorm, Metric.UpdateNorm, Metric.WeightLossRatio}
+            is_stability = task.metric in stability_metrics
+            if is_stability:
+                ax.set_yscale("log")
+                ax.grid(True, alpha=0.3)
+
             # Determine if we should show train/test differentiation
             has_splits = any(key.split is not None for key in metric_keys)
             is_loss_or_error = any(
@@ -904,6 +929,181 @@ def plot_hyperparam_grid(
         )
 
     plt.savefig(filepath, dpi=150, bbox_inches="tight")
+    plt.close()
+
+
+def plot_stability_analysis(
+    results: ResultsType,
+    task: PlotTask,
+    filepath: Path,
+) -> None:
+    """
+    Plots stability metrics in a grid:
+    Rows = Base Optimizer Types (GD, LossNGD, VecNGD, Adam, AdaGrad)
+    Cols = [Base: W_Norm, Update_Norm, Ratio] | [SAM: W_Norm, Update_Norm, Ratio]
+
+    Color scheme:
+    - Hue: Learning Rate
+    - Lightness: Rho (for SAM variants)
+    """
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+
+    # Identify optimizer pairs (base -> SAM)
+    pairs = _identify_optimizer_pairs(results)
+    if not pairs:
+        return
+
+    # Extract stability metrics from task
+    metric_keys = task.keys
+    stability_metrics_set = {Metric.WeightNorm, Metric.UpdateNorm, Metric.WeightLossRatio}
+    metrics_in_task = [k.metric for k in metric_keys if k.metric in stability_metrics_set]
+
+    if not metrics_in_task:
+        return
+
+    # Use standard order if all 3 are present
+    metrics = [Metric.WeightNorm, Metric.UpdateNorm, Metric.WeightLossRatio]
+    metrics = [m for m in metrics if m in metrics_in_task]
+
+    if not metrics:
+        return
+
+    # Sort base optimizers by name
+    base_opts = sorted(pairs.keys(), key=lambda x: x.name)
+    nrows = len(pairs)
+    ncols = 6  # 3 metrics × 2 groups (Base, SAM)
+
+    fig, axes = plt.subplots(
+        nrows, ncols,
+        figsize=(4 * ncols, 5 * nrows),
+        sharex=True,
+        constrained_layout=True,
+        squeeze=False
+    )
+
+    # --- Color Setup (Hue=LR, Lightness=Rho) ---
+    import colorsys
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    all_configs = list(results.keys())
+    all_lrs = sorted(set(c.learning_rate for c in all_configs))
+    all_rhos = sorted(set(c.get(Hyperparam.Rho, 0.0) for c in all_configs if c.get(Hyperparam.Rho) is not None))
+
+    lr_cmap = plt.get_cmap("tab10")
+
+    lr_to_hue = {}
+    for i, lr in enumerate(all_lrs):
+        r, g, b = lr_cmap(i % 10)[:3]
+        h, s, v = colorsys.rgb_to_hsv(r, g, b)
+        lr_to_hue[lr] = h
+
+    def get_color(lr, rho):
+        """Get color based on learning rate (hue) and rho (lightness)."""
+        if lr not in lr_to_hue:
+            return lr_cmap(0)
+
+        h = lr_to_hue[lr]
+
+        # Map rho to value (lightness)
+        # Higher rho -> Darker color (Lower Value)
+        if rho is not None and rho != 0.0 and len(all_rhos) > 1:
+            rho_idx = all_rhos.index(rho)
+            # Map index to value range [0.9, 0.4]
+            v = 0.9 - 0.5 * (rho_idx / max(1, len(all_rhos) - 1))
+        else:
+            v = 0.9  # Full brightness for base optimizers or single rho
+
+        return colorsys.hsv_to_rgb(h, 0.7, v)
+
+    # --- Plotting Loop ---
+    for row_idx, base_opt in enumerate(base_opts):
+        sam_opt = pairs[base_opt]
+
+        # Iterate: Base (first 3 cols), SAM (next 3 cols)
+        for group_idx, opt in enumerate([base_opt, sam_opt]):
+            col_offset = group_idx * 3
+            configs = [c for c in results.keys() if c.optimizer == opt]
+
+            for m_idx, metric in enumerate(metrics):
+                ax = axes[row_idx, col_offset + m_idx]
+
+                # Manual Log Scale application
+                ax.set_yscale("log")
+                ax.grid(True, alpha=0.3)
+
+                # Filter metric keys for this specific metric
+                m_keys = [k for k in task.keys if k.metric == metric]
+
+                # Plot data
+                for config in configs:
+                    history = _get_history(results[config])
+                    if history is None:
+                        continue
+
+                    histories = _get_histories(results[config])
+                    color = get_color(config.learning_rate, config.get(Hyperparam.Rho, 0.0))
+
+                    for h in histories:
+                        h_cpu = h.copy_cpu()
+                        steps = h_cpu.get_steps()
+                        steps_arr = np.array(steps)
+
+                        for key in m_keys:
+                            if key in h_cpu.metric_keys:
+                                values = h_cpu.get(key)
+                                values_arr = np.array(values)
+                                ax.plot(steps_arr, values_arr, color=color, alpha=0.8)
+
+                # Titles (Top Row) & Y Labels (Left Col of Group)
+                if row_idx == 0:
+                    prefix = "Base" if group_idx == 0 else "SAM"
+                    ax.set_title(f"{prefix}: {metric.name}", fontsize=11)
+
+                if m_idx == 0:
+                    ax.set_ylabel(f"{opt.name}", fontsize=10)
+
+    # Set X labels for bottom row
+    for ax in axes[-1, :]:
+        ax.set_xlabel("Steps")
+
+    # --- Legend (Outside Upper Center) ---
+    legend_elements = []
+
+    # 1. Learning Rate (Hue)
+    if all_lrs:
+        legend_elements.append(Patch(facecolor="none", edgecolor="none", label="LR (Hue):"))
+        for lr in all_lrs:
+            mid_rho = all_rhos[len(all_rhos)//2] if all_rhos else None
+            c = get_color(lr, mid_rho)
+            lr_label = f"{lr:.0e}" if lr < 0.01 else f"{lr:.2g}"
+            legend_elements.append(Line2D([0], [0], color=c, lw=3, label=f"  {lr_label}"))
+
+    # 2. Rho (Lightness)
+    if all_rhos:
+        legend_elements.append(Patch(facecolor="none", edgecolor="none", label="  "))
+        legend_elements.append(Patch(facecolor="none", edgecolor="none", label="Rho (Value):"))
+        sample_lr = all_lrs[0] if all_lrs else 0.01
+
+        # Show Min, Mid, Max rho
+        indices = [0, len(all_rhos)//2, -1] if len(all_rhos) > 2 else range(len(all_rhos))
+        for i in sorted(list(set(indices))):
+            rho = all_rhos[i]
+            c = get_color(sample_lr, rho)
+            legend_elements.append(Line2D([0], [0], color=c, lw=3, label=f"  ρ={rho}"))
+
+    fig.suptitle(f"Stability Analysis: {task.display_title}", fontsize=14)
+
+    if legend_elements:
+        fig.legend(
+            handles=legend_elements,
+            loc="outside upper center",
+            ncol=min(len(legend_elements), 8),
+            fontsize=9,
+            frameon=True
+        )
+
+    plt.savefig(filepath, dpi=150)
     plt.close()
 
 
@@ -1182,7 +1382,9 @@ def _identify_optimizer_pairs(
     # Define all possible base -> SAM mappings
     sam_mappings = {
         Optimizer.GD: Optimizer.SAM,
-        Optimizer.NGD: Optimizer.SAM_NGD,
+        Optimizer.LossNGD: Optimizer.SAM_LossNGD,
+        Optimizer.VecNGD: Optimizer.SAM_VecNGD,
+        Optimizer.NGD: Optimizer.SAM_NGD,  # Backward compatibility
         Optimizer.Adam: Optimizer.SAM_Adam,
         Optimizer.AdaGrad: Optimizer.SAM_AdaGrad,
     }
