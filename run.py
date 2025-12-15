@@ -128,7 +128,7 @@ def parse_args():
             ("loss", "--loss"),
             ("deterministic", "--deterministic"),
         ]
-        missing = [arg_name for arg, arg_flag in required_args if not getattr(args, arg)]
+        missing = [arg for arg, arg_flag in required_args if not getattr(args, arg)]
         if missing:
             parser.error(
                 f"Either --preset must be specified, or all of these arguments are required: "
@@ -187,7 +187,9 @@ def get_config(args):
         model_factory = default_model_linear(input_dim=5000, device=device)
         use_manual = False
     else:  # twolayer
-        model_factory = default_model_twolayer(input_dim=5000, hidden_dim=50, device=device)
+        model_factory = default_model_twolayer(
+            input_dim=5000, hidden_dim=50, device=device
+        )
         use_manual = True
 
     # Get dataset generation config
@@ -207,10 +209,12 @@ def get_config(args):
 
     # Expand sweep grid
     from engine import expand_sweep_grid
+
     optimizer_configs = expand_sweep_grid(optimizer_factories, sweeps)
 
-    # Get dataset
-    X, y, v_pop = make_soudry_dataset(**dataset_config)
+    # Get dataset - filter out test_size for make_soudry_dataset
+    dataset_params = {k: v for k, v in dataset_config.items() if k != "test_size"}
+    X, y, v_pop = make_soudry_dataset(**dataset_params)
     w_star = get_empirical_max_margin(X, y)
     datasets = split_train_test(X, y, test_size=dataset_config["test_size"])
 
@@ -222,7 +226,9 @@ def get_config(args):
     if deterministic:
         run_config = default_deterministic_run(total_iters=10_000, debug=True)
     else:
-        run_config = default_stochastic_run(num_epochs=10_000, batch_size=32, debug=True)
+        run_config = default_stochastic_run(
+            num_epochs=10_000, batch_size=32, debug=True
+        )
 
     # Get plotting config
     plot_config = default_plot_options(experiment_name=args.output)
