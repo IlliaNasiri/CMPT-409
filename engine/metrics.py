@@ -79,15 +79,14 @@ def get_direction_distance(w: torch.Tensor, w_star: torch.Tensor) -> torch.Tenso
     Returns:
         Distance (Python float)
     """
-    eps = 1e-12
 
     # Ensure same device
     if w_star.device != w.device:
         w_star = w_star.to(w.device)
 
     # Normalize both vectors
-    w_norm = w / (torch.norm(w) + eps)
-    w_star_norm = w_star / (torch.norm(w_star) + eps)
+    w_norm = w.norm()
+    w_star_norm = w_star.norm()
 
     # Compute distance
     diff = w_norm - w_star_norm
