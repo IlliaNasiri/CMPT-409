@@ -1089,7 +1089,7 @@ def _compute_rho_vibrancy_color(lr: float, rho: float, all_lrs: List[float], all
         saturation = 100.0
         lightness = 40.0
     else:
-        # SAM variants: scale vibrancy with rho
+        # SAM variants: scale vibrancy with rho AND add hue variation
         sorted_rhos = sorted([r for r in all_rhos if r > 0.0])  # Only non-zero rhos
         n_rhos = len(sorted_rhos)
         if n_rhos > 0 and rho in sorted_rhos:
@@ -1098,9 +1098,14 @@ def _compute_rho_vibrancy_color(lr: float, rho: float, all_lrs: List[float], all
         else:
             rho_normalized = 0.5
 
+        # Add hue variation: shift hue based on rho (bigger variance)
+        # Lower rho → shift hue backward, Higher rho → shift hue forward
+        hue_shift = (rho_normalized - 0.5) * 30.0  # ±15 degrees variation
+        hue = (base_hue + hue_shift) % 360.0
+
         # Higher rho = more vibrant (higher saturation, lower lightness)
         # Lower rho = more pastel (lower saturation, higher lightness)
-        saturation = 30.0 + 70.0 * rho_normalized  # 30% to 100%
+        saturation = 15.0 + 70.0 * rho_normalized  # 15% to 85%
         lightness = 85.0 - 45.0 * rho_normalized  # 85% to 40%
 
     if hsluv is None:
