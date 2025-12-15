@@ -115,6 +115,16 @@ def parse_args():
         choices=["True", "False"],
         help="Whether to use deterministic (full-batch) training: 'True' or 'False'",
     )
+    parser.add_argument(
+        "--iters",
+        type=int,
+        help="Number of iterations/epochs to run (default: 10_000)",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Disable debug output during training",
+    )
 
     args = parser.parse_args()
 
@@ -223,11 +233,13 @@ def get_config(args):
 
     # Determine run type (deterministic vs stochastic)
     deterministic = args.deterministic == "True"
+    iters = args.iters if args.iters else 10_000
+    debug = not args.quiet
     if deterministic:
-        run_config = default_deterministic_run(total_iters=10_000, debug=True)
+        run_config = default_deterministic_run(total_iters=iters, debug=debug)
     else:
         run_config = default_stochastic_run(
-            num_epochs=10_000, batch_size=32, debug=True
+            num_epochs=iters, batch_size=32, debug=debug
         )
 
     # Get plotting config
@@ -262,6 +274,10 @@ def main():
     print(f"  Loss function: {args.loss}")
     print(f"  Experiment name: {args.output}")
     print(f"  Deterministic: {args.deterministic}")
+    if args.iters:
+        print(f"  Iterations/epochs: {args.iters}")
+    if args.quiet:
+        print(f"  Debug mode: False (quiet)")
     print()
 
     # Get configuration from default_run_params
