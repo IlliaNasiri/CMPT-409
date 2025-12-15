@@ -83,8 +83,8 @@ def main():
     }
 
     # === Hyperparameter sweeps ===
-    learning_rates = [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]
-    rho_values = [0.05, 0.1, 0.5, 1.0, 5.0, 15.0, 50.0]
+    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0, 1e1, 1e2]
+    rho_values = [1e-2, 1e-1, 1e0, 1e1, 1e2, 1e3]
 
     sweeps = {
         Optimizer.Adam: {

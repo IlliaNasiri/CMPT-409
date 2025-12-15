@@ -94,8 +94,8 @@ def main():
     # ----------------------------------------------------------
     # Hyperparameter sweeps
     # ----------------------------------------------------------
-    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0]
-    rho_values = [0.05]
+    learning_rates = [1e-4, 1e-3, 1e-2, 1e-1, 1e0, 1e1, 1e2]
+    rho_values = [1e-2, 1e-1, 1e0, 1e1, 1e2, 1e3]
     total_iters = 10_000
 
     sweeps = {
