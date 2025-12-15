@@ -268,7 +268,6 @@ def main():
     config = get_config(args)
 
     print("Configuration retrieved successfully!")
-    print(f"  Optimizers: {list(config['optimizer_configs'].keys())}")
     print(f"  Number of configs: {len(config['optimizer_configs'])}")
     print()
 
