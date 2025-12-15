@@ -40,7 +40,7 @@ def main():
     print(f"Using device: {device}")
 
     # Generate dataset (Torch only now)
-    X, y, v_pop = make_soudry_dataset(n=200, d=5000, device=device)
+    X, y, v_pop = make_soudry_dataset(n=200, d=5000, margin=1.0, device=device)
     w_star = get_empirical_max_margin(X, y)
 
     print("Angle(v, w*):", get_angle(v_pop, w_star))
@@ -67,7 +67,8 @@ def main():
                 Metric.Angle: get_angle,
                 Metric.Distance: get_direction_distance,
                 Metric.WeightNorm: get_weight_norm,
-                Metric.UpdateNorm: compute_update_norm,
+                Metric.GradNorm: get_weight_norm,  # Function not used, optimizer provides grad_norm
+                Metric.UpdateNorm: compute_update_norm,  # Function not used, optimizer provides update_norm
                 Metric.GradLossRatio: loss_fn,  # Function not used, computed from grad_norm/loss
             },
             w_star=w_star,
