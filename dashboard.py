@@ -159,20 +159,64 @@ tabs = st.tabs(["Trajectory Analysis (Finding 1)", "SAM vs Base (Finding 2)", "H
 with tabs[0]:
     st.header("Trajectory Analysis")
 
-    col1, col2, col3 = st.columns(3)
+    # Toggle between GD and SGD results
+    experiment_choice = st.radio(
+        "Select Experiment Type",
+        ["GD (Gradient Descent)", "SGD (Stochastic Gradient Descent)"],
+        horizontal=True,
+        key="f1_experiment_choice"
+    )
+
+    # Set path based on selection
+    if "GD" in experiment_choice and "SGD" not in experiment_choice:
+        finding1_path = Path("experiments/prayers/soudry_gd/2025-12-15_12-41-06/results.npz")
+        is_sgd_f1 = False
+    else:
+        finding1_path = Path("experiments/prayers/soudry_sgd/2025-12-15_13-04-25/results.npz")
+        is_sgd_f1 = True
+
+    if not finding1_path.exists():
+        st.error(f"Finding 1 data not found: {finding1_path}")
+        st.stop()
+
+    # Load the results
+    try:
+        reader_f1 = load_data(str(finding1_path))
+    except Exception as e:
+        st.error(f"Error loading Finding 1 data: {e}")
+        st.stop()
+
+    # Set x-axis label based on experiment type
+    x_label = "Epoch" if is_sgd_f1 else "Iteration"
+
+    # Set optimizer names for title
+    base_opt_name = "SGD" if is_sgd_f1 else "GD"
+    sam_opt_name = "SAM_SGD" if is_sgd_f1 else "SAM_GD"
+
+    # Get data from Finding 1 reader
+    all_optimizers_f1 = reader_f1.optimizers
+    all_metrics_f1 = reader_f1.metrics
+    all_params_f1 = reader_f1.hyperparams
+
+    # Optimizer filters
+    col1, col2 = st.columns(2)
     with col1:
-        plot_metric = st.selectbox("Metric (Y-Axis)", all_metrics, index=all_metrics.index("angle") if "angle" in all_metrics else 0)
+        base_opts = [o for o in all_optimizers_f1 if "SAM" not in o]
+        base_opt_f1 = st.selectbox("Base Optimizer", base_opts, index=base_opts.index("GD") if "GD" in base_opts else 0, key="f1_base")
     with col2:
-        x_axis_type = st.radio("X-Axis Scale", ["Log", "Linear"], horizontal=True, key="t1_x")
+        sam_opts = [o for o in all_optimizers_f1 if "SAM" in o]
+        sam_opt_f1 = st.selectbox("SAM Variant", sam_opts, index=sam_opts.index("SAM") if "SAM" in sam_opts else 0, key="f1_sam")
+
+    col3, col4, col5 = st.columns(3)
     with col3:
+        plot_metric = st.selectbox("Metric (Y-Axis)", all_metrics_f1, index=all_metrics_f1.index("angle") if "angle" in all_metrics_f1 else 0)
+    with col4:
+        x_axis_type = st.radio("X-Axis Scale", ["Log", "Linear"], horizontal=True, key="t1_x")
+    with col5:
         show_legend = st.checkbox("Show Legend", value=True, key="t1_legend")
 
-    # Determine default title based on experiment type
-    if experiment_type == "soudry_gd":
-        default_title = "Angle Difference from the Max-Margin Solution, for Gradient Descent vs SAM for a Linear Model"
-    else:
-        default_title = ""
-
+    # Default title for Finding 1 (dynamic based on experiment type)
+    default_title = f"Angle Difference from the Max-Margin Solution, for {base_opt_name} vs {sam_opt_name} for a Linear Model"
     plot_title = st.text_input("Plot Title (optional)", default_title, key="t1_title")
 
     strategy = PlotStrategy(
@@ -225,79 +269,97 @@ with tabs[0]:
 
         return (rgb[0], rgb[1], rgb[2])
 
-    # Create two-column layout: GD and SAM
+    # Extract LRs and rhos from Finding 1 data for the selected optimizers
+    selected_opts_f1 = [base_opt_f1, sam_opt_f1]
+    all_lrs_f1 = set()
+    all_rhos_f1 = set()
+    for opt in selected_opts_f1:
+        for p in all_params_f1.get(opt, []):
+            if 'lr' in p: all_lrs_f1.add(p['lr'])
+            if 'rho' in p: all_rhos_f1.add(p['rho'])
+
+    sorted_lrs_f1 = sorted(list(all_lrs_f1))
+    sorted_rhos_f1 = sorted(list(all_rhos_f1))
+
+    # Create two-column layout: Base and SAM
     fig, (ax_gd, ax_sam) = plt.subplots(1, 2, figsize=(16, 7), sharey=True)
 
     # Configure both axes
     strategy.configure_axis(ax_gd, base_label=plot_metric)
     strategy.configure_axis(ax_sam, base_label=plot_metric)
 
-    # Set titles with proper optimizer names
-    base_name = map_optimizer_name("GD")
-    sam_name = map_optimizer_name("SAM")
-    ax_gd.set_title(f"{base_name} (Base)", fontsize=12, pad=10)
-    ax_sam.set_title(sam_name, fontsize=12, pad=10)
+    # Set titles with optimizer names (apply mapping for display)
+    display_base_name = base_opt_name if base_opt_f1 == "GD" else base_opt_f1
+    display_sam_name = sam_opt_name if sam_opt_f1 == "SAM" else sam_opt_f1
+    ax_gd.set_title(f"{display_base_name} (Base)", fontsize=12, pad=10)
+    ax_sam.set_title(display_sam_name, fontsize=12, pad=10)
+
+    # Set x-axis labels
+    ax_gd.set_xlabel(x_label, fontsize=11)
+    ax_sam.set_xlabel(x_label, fontsize=11)
+
+    # Set y-axis labels on both subplots
+    ax_gd.set_ylabel("Angle Difference (radians)", fontsize=11)
+    ax_sam.set_ylabel("Angle Difference (radians)", fontsize=11)
 
     count_gd = 0
     count_sam = 0
 
-    # Plot GD (base optimizers)
-    for opt in [o for o in selected_opts if "SAM" not in o]:
-        opt_params = all_params.get(opt, [])
-        for params in opt_params:
-            lr = params.get('lr')
-            rho = 0.0  # Base optimizers have rho=0
+    # Plot base optimizer
+    opt_params = all_params_f1.get(base_opt_f1, [])
+    for params in opt_params:
+        lr = params.get('lr')
+        rho = 0.0  # Base optimizers have rho=0
 
-            run_data = []
-            steps = None
-            for seed in reader.seeds:
-                try:
-                    data = reader.get_data(opt, params, seed, plot_metric)
-                    steps_data = reader.get_data(opt, params, seed, 'steps')
-                    run_data.append(data)
-                    steps = steps_data
-                except KeyError: pass
+        run_data = []
+        steps = None
+        for seed in reader_f1.seeds:
+            try:
+                data = reader_f1.get_data(base_opt_f1, params, seed, plot_metric)
+                steps_data = reader_f1.get_data(base_opt_f1, params, seed, 'steps')
+                run_data.append(data)
+                steps = steps_data
+            except KeyError: pass
 
-            if run_data and steps is not None:
-                mean_data = np.mean(np.stack(run_data), axis=0)
-                c = compute_rho_vibrancy_color(lr, rho, sorted_lrs, sorted_rhos)
+        if run_data and steps is not None:
+            mean_data = np.mean(np.stack(run_data), axis=0)
+            c = compute_rho_vibrancy_color(lr, rho, sorted_lrs_f1, sorted_rhos_f1)
 
-                ctx = PlotContext(
-                    ax=ax_gd, x=steps, y=mean_data,
-                    label="_nolegend_",
-                    plot_kwargs={"color": c, "linewidth": 2.0, "alpha": 0.8}
-                )
-                strategy.plot(ctx)
-                count_gd += 1
+            ctx = PlotContext(
+                ax=ax_gd, x=steps, y=mean_data,
+                label="_nolegend_",
+                plot_kwargs={"color": c, "linewidth": 2.0, "alpha": 0.8}
+            )
+            strategy.plot(ctx)
+            count_gd += 1
 
-    # Plot SAM optimizers
-    for opt in [o for o in selected_opts if "SAM" in o]:
-        opt_params = all_params.get(opt, [])
-        for params in opt_params:
-            lr = params.get('lr')
-            rho = params.get('rho', 0.0)
+    # Plot SAM optimizer
+    opt_params = all_params_f1.get(sam_opt_f1, [])
+    for params in opt_params:
+        lr = params.get('lr')
+        rho = params.get('rho', 0.0)
 
-            run_data = []
-            steps = None
-            for seed in reader.seeds:
-                try:
-                    data = reader.get_data(opt, params, seed, plot_metric)
-                    steps_data = reader.get_data(opt, params, seed, 'steps')
-                    run_data.append(data)
-                    steps = steps_data
-                except KeyError: pass
+        run_data = []
+        steps = None
+        for seed in reader_f1.seeds:
+            try:
+                data = reader_f1.get_data(sam_opt_f1, params, seed, plot_metric)
+                steps_data = reader_f1.get_data(sam_opt_f1, params, seed, 'steps')
+                run_data.append(data)
+                steps = steps_data
+            except KeyError: pass
 
-            if run_data and steps is not None:
-                mean_data = np.mean(np.stack(run_data), axis=0)
-                c = compute_rho_vibrancy_color(lr, rho, sorted_lrs, sorted_rhos)
+        if run_data and steps is not None:
+            mean_data = np.mean(np.stack(run_data), axis=0)
+            c = compute_rho_vibrancy_color(lr, rho, sorted_lrs_f1, sorted_rhos_f1)
 
-                ctx = PlotContext(
-                    ax=ax_sam, x=steps, y=mean_data,
-                    label="_nolegend_",
-                    plot_kwargs={"color": c, "linewidth": 2.0, "alpha": 0.8}
-                )
-                strategy.plot(ctx)
-                count_sam += 1
+            ctx = PlotContext(
+                ax=ax_sam, x=steps, y=mean_data,
+                label="_nolegend_",
+                plot_kwargs={"color": c, "linewidth": 2.0, "alpha": 0.8}
+            )
+            strategy.plot(ctx)
+            count_sam += 1
 
     if count_gd > 0 or count_sam > 0:
         # Add custom legend if enabled (matching sam_comparison style from plotting.py)
@@ -305,23 +367,24 @@ with tabs[0]:
             legend_elements = []
 
             # Learning Rate (Hue)
-            if sorted_lrs:
+            if sorted_lrs_f1:
                 legend_elements.append(Patch(facecolor="none", edgecolor="none", label="Learning Rate (Hue):"))
                 # Use mid-rho for LR color examples
-                mid_rho_idx = len(sorted_rhos) // 2 if sorted_rhos else 0
-                sample_rho = sorted_rhos[mid_rho_idx] if sorted_rhos else 0.0
-                for lr in sorted_lrs:
-                    c_rgb = compute_rho_vibrancy_color(lr, sample_rho, sorted_lrs, sorted_rhos)
+                mid_rho_idx = len(sorted_rhos_f1) // 2 if sorted_rhos_f1 else 0
+                sample_rho = sorted_rhos_f1[mid_rho_idx] if sorted_rhos_f1 else 0.0
+                for lr in sorted_lrs_f1:
+                    c_rgb = compute_rho_vibrancy_color(lr, sample_rho, sorted_lrs_f1, sorted_rhos_f1)
                     legend_elements.append(Line2D([0], [0], color=c_rgb, linewidth=3, label=f"  lr={lr}"))
 
             # Rho (Vibrancy)
-            if sorted_rhos and len(sorted_rhos) > 1:
+            if sorted_rhos_f1 and len(sorted_rhos_f1) > 1:
                 legend_elements.append(Patch(facecolor="none", edgecolor="none", label=""))
-                legend_elements.append(Patch(facecolor="none", edgecolor="none", label="rho (Vibrancy, SAM only):"))
+                rho_label = f"rho (Vibrancy, {sam_opt_name} only):"
+                legend_elements.append(Patch(facecolor="none", edgecolor="none", label=rho_label))
                 # Use sample LR for rho color examples
-                sample_lr = sorted_lrs[0] if sorted_lrs else 0.01
-                for rho in sorted_rhos:
-                    c_rgb = compute_rho_vibrancy_color(sample_lr, rho, sorted_lrs, sorted_rhos)
+                sample_lr = sorted_lrs_f1[0] if sorted_lrs_f1 else 0.01
+                for rho in sorted_rhos_f1:
+                    c_rgb = compute_rho_vibrancy_color(sample_lr, rho, sorted_lrs_f1, sorted_rhos_f1)
                     legend_elements.append(Line2D([0], [0], color=c_rgb, linewidth=3, alpha=0.8, label=f"  rho={rho}"))
 
             if legend_elements:
@@ -332,7 +395,7 @@ with tabs[0]:
                     bbox_to_anchor=(0.5, 1.02),
                     ncol=min(len(legend_elements), 8),
                     frameon=True,
-                    fontsize=9,
+                    fontsize=11,
                     handlelength=2.0,
                     handleheight=0.7,
                     labelspacing=0.3,
