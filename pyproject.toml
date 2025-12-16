@@ -8,7 +8,9 @@ dependencies = [
     "hsluv>=5.0.4",
     "matplotlib>=3.10.8",
     "numpy>=2.2.6",
+    "pandas>=2.3.3",
     "scikit-learn>=1.7.2",
+    "streamlit>=1.52.1",
     "torch>=2.9.1",
     "tqdm>=4.67.1",
 ]
