@@ -418,52 +418,192 @@ with tabs[0]:
 # ==============================================================================
 with tabs[1]:
     st.header("Finding 2: SAM vs Base Comparison")
-    
+
+    # Toggle between GD and SGD results
+    experiment_choice_f2 = st.radio(
+        "Select Experiment Type",
+        ["GD (Gradient Descent)", "SGD (Stochastic Gradient Descent)"],
+        horizontal=True,
+        key="f2_experiment_choice"
+    )
+
+    # Set path based on selection
+    if "GD" in experiment_choice_f2 and "SGD" not in experiment_choice_f2:
+        finding2_path = Path("experiments/prayers/soudry_gd/2025-12-15_12-41-06/results.npz")
+        is_sgd_f2 = False
+    else:
+        finding2_path = Path("experiments/prayers/soudry_sgd/2025-12-15_13-04-25/results.npz")
+        is_sgd_f2 = True
+
+    if not finding2_path.exists():
+        st.error(f"Finding 2 data not found: {finding2_path}")
+        st.stop()
+
+    # Load the results
+    try:
+        reader_f2 = load_data(str(finding2_path))
+    except Exception as e:
+        st.error(f"Error loading Finding 2 data: {e}")
+        st.stop()
+
+    # Set x-axis label based on experiment type
+    x_label_f2 = "Epoch" if is_sgd_f2 else "Iteration"
+
+    # Set optimizer names
+    base_opt_name_f2 = "SGD" if is_sgd_f2 else "GD"
+    sam_opt_name_f2 = "SAM_SGD" if is_sgd_f2 else "SAM_GD"
+
+    # Get data from Finding 2 reader
+    all_optimizers_f2 = reader_f2.optimizers
+    all_metrics_f2 = reader_f2.metrics
+    all_params_f2 = reader_f2.hyperparams
+
     col1, col2, col3 = st.columns(3)
     with col1:
-        base_opts = [o for o in all_optimizers if "SAM" not in o]
-        base_opt_select = st.selectbox("Base Optimizer", base_opts, index=0 if base_opts else 0)
+        base_opts = [o for o in all_optimizers_f2 if "SAM" not in o]
+        base_opt_select = st.selectbox("Base Optimizer", base_opts, index=base_opts.index("GD") if "GD" in base_opts else 0, key="f2_base")
     with col2:
-        sam_opts = [o for o in all_optimizers if "SAM" in o]
-        sam_opt_select = st.selectbox("SAM Variant", sam_opts, index=0 if sam_opts else 0)
+        sam_opts = [o for o in all_optimizers_f2 if "SAM" in o]
+        sam_opt_select = st.selectbox("SAM Variant", sam_opts, index=sam_opts.index("SAM") if "SAM" in sam_opts else 0, key="f2_sam")
     with col3:
-        metric_select = st.selectbox("Metric", [m for m in all_metrics], index=0)
-    
+        metric_select = st.selectbox("Metric", [m for m in all_metrics_f2], index=all_metrics_f2.index("angle") if "angle" in all_metrics_f2 else 0)
+
+    show_legend_f2 = st.checkbox("Show Legend", value=True, key="f2_legend")
+
+    # Extract LRs and rhos from Finding 2 data
+    selected_opts_f2 = [base_opt_select, sam_opt_select]
+    all_lrs_f2 = set()
+    all_rhos_f2 = set()
+    for opt in selected_opts_f2:
+        for p in all_params_f2.get(opt, []):
+            if 'lr' in p: all_lrs_f2.add(p['lr'])
+            if 'rho' in p: all_rhos_f2.add(p['rho'])
+
+    sorted_lrs_f2 = sorted(list(all_lrs_f2))
+    sorted_rhos_f2 = sorted(list(all_rhos_f2))
+
+    # Helper function from Finding 1 to compute colors with rho vibrancy
+    def compute_rho_vibrancy_color_f2(lr, rho, all_lrs, all_rhos):
+        """Match the exact color computation from engine/plotting.py"""
+        import colorsys
+        try:
+            import hsluv
+        except ImportError:
+            hsluv = None
+
+        # Map LR to hue position
+        sorted_lrs_local = sorted(all_lrs)
+        n_lrs = len(sorted_lrs_local)
+        if lr in sorted_lrs_local:
+            lr_rank = sorted_lrs_local.index(lr)
+            lr_normalized = lr_rank / max(1, n_lrs - 1)
+        else:
+            lr_normalized = 0.5
+
+        base_hue = (lr_normalized * 330.0) % 360.0
+        hue = base_hue
+
+        if rho == 0.0:
+            saturation = 100.0
+            lightness = 40.0
+        else:
+            sorted_rhos_local = sorted([r for r in all_rhos if r > 0.0])
+            n_rhos = len(sorted_rhos_local)
+            if n_rhos > 0 and rho in sorted_rhos_local:
+                rho_rank = sorted_rhos_local.index(rho)
+                rho_normalized = rho_rank / max(1, n_rhos - 1)
+            else:
+                rho_normalized = 0.5
+
+            hue_shift = (rho_normalized - 0.5) * 30.0
+            hue = (base_hue + hue_shift) % 360.0
+            saturation = 15.0 + 70.0 * rho_normalized
+            lightness = 85.0 - 45.0 * rho_normalized
+
+        if hsluv is None:
+            rgb = colorsys.hsv_to_rgb(hue / 360.0, saturation / 100.0, lightness / 100.0)
+        else:
+            rgb = hsluv.hsluv_to_rgb((hue, saturation, lightness))
+
+        return (rgb[0], rgb[1], rgb[2])
+
     fig2, ax2 = plt.subplots(figsize=(12, 7))
     strategy2 = PlotStrategy(
-        x_scale=AxisScale.Log, 
+        x_scale=AxisScale.Log,
         y_scale=AxisScale.Log if "loss" in metric_select or "angle" in metric_select else AxisScale.Linear
     )
     strategy2.configure_axis(ax2, base_label=metric_select)
-    
-    colors = ColorManagerFactory.create_husl_manager(sorted_lrs, sorted_rhos)
-    
+
+    # Set axis labels
+    ax2.set_xlabel(x_label_f2, fontsize=11)
+    ax2.set_ylabel("Angle Difference (radians)", fontsize=11)
+
     # Plot Base
-    for params in all_params.get(base_opt_select, []):
+    for params in all_params_f2.get(base_opt_select, []):
         lr = params.get('lr')
-        for seed in reader.seeds:
+        for seed in reader_f2.seeds:
             try:
-                y = reader.get_data(base_opt_select, params, seed, metric_select)
-                x = reader.get_data(base_opt_select, params, seed, 'steps')
-                c = colors.color_config(lr, rho=0.0)
+                y = reader_f2.get_data(base_opt_select, params, seed, metric_select)
+                x = reader_f2.get_data(base_opt_select, params, seed, 'steps')
+                c = compute_rho_vibrancy_color_f2(lr, 0.0, sorted_lrs_f2, sorted_rhos_f2)
                 ax2.plot(x, y, color=c, linestyle='--', alpha=0.6, linewidth=1.5, label="_nolegend_")
                 break
             except: pass
 
     # Plot SAM
-    for params in all_params.get(sam_opt_select, []):
+    for params in all_params_f2.get(sam_opt_select, []):
         lr = params.get('lr')
         rho = params.get('rho', 0.0)
-        for seed in reader.seeds:
+        for seed in reader_f2.seeds:
             try:
-                y = reader.get_data(sam_opt_select, params, seed, metric_select)
-                x = reader.get_data(sam_opt_select, params, seed, 'steps')
-                c = colors.color_config(lr, rho)
+                y = reader_f2.get_data(sam_opt_select, params, seed, metric_select)
+                x = reader_f2.get_data(sam_opt_select, params, seed, 'steps')
+                c = compute_rho_vibrancy_color_f2(lr, rho, sorted_lrs_f2, sorted_rhos_f2)
                 ax2.plot(x, y, color=c, linestyle='-', alpha=0.9, linewidth=2.0, label="_nolegend_")
                 break
             except: pass
 
-    add_custom_split_legend(ax2, colors, sorted_lrs, sorted_rhos, show_styles=True)
+    if show_legend_f2:
+        # Create legend similar to Finding 1
+        legend_elements = []
+
+        # Split style indicators
+        legend_elements.append(Line2D([0], [0], color="black", linestyle="-", linewidth=2, label=f"{sam_opt_name_f2} (Solid)"))
+        legend_elements.append(Line2D([0], [0], color="black", linestyle="--", linewidth=2, alpha=0.5, label=f"{base_opt_name_f2} (Dashed)"))
+        legend_elements.append(Patch(facecolor="none", edgecolor="none", label="   "))
+
+        # Learning Rate (Hue)
+        if sorted_lrs_f2:
+            legend_elements.append(Patch(facecolor="none", edgecolor="none", label="Learning Rate (Hue):"))
+            mid_rho_idx = len(sorted_rhos_f2) // 2 if sorted_rhos_f2 else 0
+            sample_rho = sorted_rhos_f2[mid_rho_idx] if sorted_rhos_f2 else 0.0
+            for lr in sorted_lrs_f2:
+                c_rgb = compute_rho_vibrancy_color_f2(lr, sample_rho, sorted_lrs_f2, sorted_rhos_f2)
+                legend_elements.append(Line2D([0], [0], color=c_rgb, linewidth=3, label=f"  lr={lr}"))
+
+        # Rho (Vibrancy)
+        if sorted_rhos_f2 and len(sorted_rhos_f2) > 1:
+            legend_elements.append(Patch(facecolor="none", edgecolor="none", label=""))
+            rho_label = f"rho (Vibrancy, {sam_opt_name_f2} only):"
+            legend_elements.append(Patch(facecolor="none", edgecolor="none", label=rho_label))
+            sample_lr = sorted_lrs_f2[0] if sorted_lrs_f2 else 0.01
+            for rho in sorted_rhos_f2:
+                c_rgb = compute_rho_vibrancy_color_f2(sample_lr, rho, sorted_lrs_f2, sorted_rhos_f2)
+                legend_elements.append(Line2D([0], [0], color=c_rgb, linewidth=3, alpha=0.8, label=f"  rho={rho}"))
+
+        if legend_elements:
+            ax2.legend(
+                handles=legend_elements,
+                loc='lower center',
+                bbox_to_anchor=(0.5, 1.02),
+                ncol=min(len(legend_elements), 8),
+                frameon=True,
+                fontsize=11,
+                handletextpad=0.2,
+                columnspacing=1.0,
+                edgecolor='lightgray'
+            )
+
     st.pyplot(fig2)
     
     fn2 = f"{base_opt_select}_vs_{sam_opt_select}.pdf"
