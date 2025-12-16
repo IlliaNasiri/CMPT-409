@@ -426,7 +426,7 @@ with tabs[0]:
 
         # Add title if provided
         if global_title:
-            fig.suptitle(global_title, fontsize=14, y=1.10 if global_show_legend else 0.98)
+            fig.suptitle(global_title, fontsize=14, y=1.08 if global_show_legend else 0.98)
 
         st.pyplot(fig)
 
@@ -444,7 +444,7 @@ with tabs[1]:
     # Local controls specific to Finding 2
     metric_select = st.selectbox("Metric", [m for m in all_metrics_global], index=all_metrics_global.index("angle") if "angle" in all_metrics_global else 0, key="f2_metric")
 
-    # Extract LRs and rhos from global data
+    # Extract all available LRs and rhos from global data
     selected_opts_f2 = [global_base_opt, global_sam_opt]
     all_lrs_f2 = set()
     all_rhos_f2 = set()
@@ -453,8 +453,29 @@ with tabs[1]:
             if 'lr' in p: all_lrs_f2.add(p['lr'])
             if 'rho' in p: all_rhos_f2.add(p['rho'])
 
-    sorted_lrs_f2 = sorted(list(all_lrs_f2))
-    sorted_rhos_f2 = sorted(list(all_rhos_f2))
+    sorted_lrs_f2_all = sorted(list(all_lrs_f2))
+    sorted_rhos_f2_all = sorted(list(all_rhos_f2))
+
+    # Hyperparameter filters for Finding 2
+    col_f2_1, col_f2_2 = st.columns(2)
+    with col_f2_1:
+        selected_lrs_f2 = st.multiselect(
+            "Learning Rates",
+            sorted_lrs_f2_all,
+            default=sorted_lrs_f2_all,
+            key="f2_lrs"
+        )
+    with col_f2_2:
+        selected_rhos_f2 = st.multiselect(
+            "Rho Values",
+            sorted_rhos_f2_all,
+            default=sorted_rhos_f2_all,
+            key="f2_rhos"
+        )
+
+    # Use selected values for plotting
+    sorted_lrs_f2 = sorted(selected_lrs_f2) if selected_lrs_f2 else sorted_lrs_f2_all
+    sorted_rhos_f2 = sorted(selected_rhos_f2) if selected_rhos_f2 else sorted_rhos_f2_all
 
     # Helper function from Finding 1 to compute colors with rho vibrancy
     def compute_rho_vibrancy_color_f2(lr, rho, all_lrs, all_rhos):
@@ -515,27 +536,33 @@ with tabs[1]:
     # Set tick label font sizes
     ax2.tick_params(axis='both', which='major', labelsize=14)
 
-    # Plot Base
+    # Plot Base (filter by selected LRs)
     for params in all_params_global.get(global_base_opt, []):
         lr = params.get('lr')
+        # Skip if LR not in selected list
+        if lr not in sorted_lrs_f2:
+            continue
         for seed in reader_global.seeds:
             try:
                 y = reader_global.get_data(global_base_opt, params, seed, metric_select)
                 x = reader_global.get_data(global_base_opt, params, seed, 'steps')
-                c = compute_rho_vibrancy_color_f2(lr, 0.0, sorted_lrs_f2, sorted_rhos_f2)
+                c = compute_rho_vibrancy_color_f2(lr, 0.0, sorted_lrs_f2_all, sorted_rhos_f2_all)
                 ax2.plot(x, y, color=c, linestyle='--', alpha=0.8, linewidth=1.5, marker='x', markersize=8, markevery=20, label="_nolegend_")
                 break
             except: pass
 
-    # Plot SAM
+    # Plot SAM (filter by selected LRs and rhos)
     for params in all_params_global.get(global_sam_opt, []):
         lr = params.get('lr')
         rho = params.get('rho', 0.0)
+        # Skip if LR or rho not in selected lists
+        if lr not in sorted_lrs_f2 or rho not in sorted_rhos_f2:
+            continue
         for seed in reader_global.seeds:
             try:
                 y = reader_global.get_data(global_sam_opt, params, seed, metric_select)
                 x = reader_global.get_data(global_sam_opt, params, seed, 'steps')
-                c = compute_rho_vibrancy_color_f2(lr, rho, sorted_lrs_f2, sorted_rhos_f2)
+                c = compute_rho_vibrancy_color_f2(lr, rho, sorted_lrs_f2_all, sorted_rhos_f2_all)
                 ax2.plot(x, y, color=c, linestyle='-', alpha=0.9, linewidth=2.0, label="_nolegend_")
                 break
             except: pass
@@ -549,23 +576,23 @@ with tabs[1]:
         legend_elements.append(Line2D([0], [0], color="black", linestyle="--", linewidth=2, alpha=0.5, label="Base (dashed)"))
         legend_elements.append(Patch(facecolor="none", edgecolor="none", label="   "))
 
-        # Learning Rate (Hue)
+        # Learning Rate (Hue) - show only selected LRs
         if sorted_lrs_f2:
             legend_elements.append(Patch(facecolor="none", edgecolor="none", label="Learning Rate (Hue):"))
-            mid_rho_idx = len(sorted_rhos_f2) // 2 if sorted_rhos_f2 else 0
-            sample_rho = sorted_rhos_f2[mid_rho_idx] if sorted_rhos_f2 else 0.0
+            mid_rho_idx = len(sorted_rhos_f2_all) // 2 if sorted_rhos_f2_all else 0
+            sample_rho = sorted_rhos_f2_all[mid_rho_idx] if sorted_rhos_f2_all else 0.0
             for lr in sorted_lrs_f2:
-                c_rgb = compute_rho_vibrancy_color_f2(lr, sample_rho, sorted_lrs_f2, sorted_rhos_f2)
+                c_rgb = compute_rho_vibrancy_color_f2(lr, sample_rho, sorted_lrs_f2_all, sorted_rhos_f2_all)
                 legend_elements.append(Line2D([0], [0], color=c_rgb, linewidth=3, label=f"  lr={lr}"))
 
-        # Rho (Vibrancy)
+        # Rho (Vibrancy) - show only selected rhos
         if sorted_rhos_f2 and len(sorted_rhos_f2) > 1:
             legend_elements.append(Patch(facecolor="none", edgecolor="none", label=""))
             rho_label = f"rho (Vibrancy, {global_sam_opt_name} only):"
             legend_elements.append(Patch(facecolor="none", edgecolor="none", label=rho_label))
             sample_lr = sorted_lrs_f2[0] if sorted_lrs_f2 else 0.01
             for rho in sorted_rhos_f2:
-                c_rgb = compute_rho_vibrancy_color_f2(sample_lr, rho, sorted_lrs_f2, sorted_rhos_f2)
+                c_rgb = compute_rho_vibrancy_color_f2(sample_lr, rho, sorted_lrs_f2_all, sorted_rhos_f2_all)
                 legend_elements.append(Line2D([0], [0], color=c_rgb, linewidth=3, alpha=0.8, label=f"  rho={rho}"))
 
         if legend_elements:
@@ -583,7 +610,7 @@ with tabs[1]:
 
     # Add title if provided
     if global_title:
-        fig2.suptitle(global_title, fontsize=14, y=1.10 if global_show_legend else 0.98)
+        fig2.suptitle(global_title, fontsize=14, y=1.08 if global_show_legend else 0.98)
 
     st.pyplot(fig2)
 
