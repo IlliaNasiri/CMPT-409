@@ -108,6 +108,30 @@ all_optimizers = reader.optimizers
 all_metrics = reader.metrics
 all_params = reader.hyperparams
 
+# Detect experiment type from file path
+experiment_path = selected_file.parent.name  # e.g., "2025-12-15_12-41-06"
+experiment_type = selected_file.parent.parent.name  # e.g., "soudry_gd" or "soudry_sgd"
+
+# Determine if this is an SGD experiment (stochastic gradient descent)
+is_sgd_experiment = "_sgd" in experiment_type.lower()
+
+# Helper function to map optimizer names for SGD experiments
+def map_optimizer_name(opt_name):
+    """Map optimizer names for SGD experiments."""
+    if not is_sgd_experiment:
+        return opt_name
+
+    # Apply SGD mappings
+    mappings = {
+        "GD": "SGD",
+        "VecNGD": "VecNSGD",
+        "LossNGD": "LossNSGD",
+        "SAM": "SAM_SGD",  # Base SAM uses GD
+        "SAM_VecNGD": "SAM_VecNSGD",
+        "SAM_LossNGD": "SAM_LossNSGD",
+    }
+    return mappings.get(opt_name, opt_name)
+
 # --- Sidebar: Filtering ---
 st.sidebar.header("Global Filters")
 selected_opts = st.sidebar.multiselect("Select Optimizers", all_optimizers, default=all_optimizers)
@@ -134,30 +158,96 @@ tabs = st.tabs(["Trajectory Analysis (Finding 1)", "SAM vs Base (Finding 2)", "H
 # ==============================================================================
 with tabs[0]:
     st.header("Trajectory Analysis")
-    
-    col1, col2 = st.columns(2)
+
+    col1, col2, col3 = st.columns(3)
     with col1:
         plot_metric = st.selectbox("Metric (Y-Axis)", all_metrics, index=all_metrics.index("angle") if "angle" in all_metrics else 0)
     with col2:
         x_axis_type = st.radio("X-Axis Scale", ["Log", "Linear"], horizontal=True, key="t1_x")
+    with col3:
+        show_legend = st.checkbox("Show Legend", value=True, key="t1_legend")
+
+    # Determine default title based on experiment type
+    if experiment_type == "soudry_gd":
+        default_title = "Angle Difference from the Max-Margin Solution, for Gradient Descent vs SAM for a Linear Model"
+    else:
+        default_title = ""
+
+    plot_title = st.text_input("Plot Title (optional)", default_title, key="t1_title")
 
     strategy = PlotStrategy(
         x_scale=AxisScale.Log if x_axis_type == "Log" else AxisScale.Linear,
         y_scale=AxisScale.Log if "loss" in plot_metric or "distance" in plot_metric or "angle" in plot_metric else AxisScale.Linear
     )
-    
-    fig, ax = plt.subplots(figsize=(12, 7))
-    strategy.configure_axis(ax, base_label=plot_metric)
-    
-    colors = ColorManagerFactory.create_husl_manager(sorted_lrs, sorted_rhos)
-    
-    count = 0
-    for opt in selected_opts:
+
+    # Helper function from plotting.py to compute colors with rho vibrancy
+    def compute_rho_vibrancy_color(lr, rho, all_lrs, all_rhos):
+        """Match the exact color computation from engine/plotting.py"""
+        import colorsys
+        try:
+            import hsluv
+        except ImportError:
+            hsluv = None
+
+        # Map LR to hue position
+        sorted_lrs_local = sorted(all_lrs)
+        n_lrs = len(sorted_lrs_local)
+        if lr in sorted_lrs_local:
+            lr_rank = sorted_lrs_local.index(lr)
+            lr_normalized = lr_rank / max(1, n_lrs - 1)
+        else:
+            lr_normalized = 0.5
+
+        base_hue = (lr_normalized * 330.0) % 360.0
+        hue = base_hue
+
+        if rho == 0.0:
+            saturation = 100.0
+            lightness = 40.0
+        else:
+            sorted_rhos_local = sorted([r for r in all_rhos if r > 0.0])
+            n_rhos = len(sorted_rhos_local)
+            if n_rhos > 0 and rho in sorted_rhos_local:
+                rho_rank = sorted_rhos_local.index(rho)
+                rho_normalized = rho_rank / max(1, n_rhos - 1)
+            else:
+                rho_normalized = 0.5
+
+            hue_shift = (rho_normalized - 0.5) * 30.0
+            hue = (base_hue + hue_shift) % 360.0
+            saturation = 15.0 + 70.0 * rho_normalized
+            lightness = 85.0 - 45.0 * rho_normalized
+
+        if hsluv is None:
+            rgb = colorsys.hsv_to_rgb(hue / 360.0, saturation / 100.0, lightness / 100.0)
+        else:
+            rgb = hsluv.hsluv_to_rgb((hue, saturation, lightness))
+
+        return (rgb[0], rgb[1], rgb[2])
+
+    # Create two-column layout: GD and SAM
+    fig, (ax_gd, ax_sam) = plt.subplots(1, 2, figsize=(16, 7), sharey=True)
+
+    # Configure both axes
+    strategy.configure_axis(ax_gd, base_label=plot_metric)
+    strategy.configure_axis(ax_sam, base_label=plot_metric)
+
+    # Set titles with proper optimizer names
+    base_name = map_optimizer_name("GD")
+    sam_name = map_optimizer_name("SAM")
+    ax_gd.set_title(f"{base_name} (Base)", fontsize=12, pad=10)
+    ax_sam.set_title(sam_name, fontsize=12, pad=10)
+
+    count_gd = 0
+    count_sam = 0
+
+    # Plot GD (base optimizers)
+    for opt in [o for o in selected_opts if "SAM" not in o]:
         opt_params = all_params.get(opt, [])
         for params in opt_params:
             lr = params.get('lr')
-            rho = params.get('rho', 0.0)
-            
+            rho = 0.0  # Base optimizers have rho=0
+
             run_data = []
             steps = None
             for seed in reader.seeds:
@@ -167,23 +257,94 @@ with tabs[0]:
                     run_data.append(data)
                     steps = steps_data
                 except KeyError: pass
-            
+
             if run_data and steps is not None:
                 mean_data = np.mean(np.stack(run_data), axis=0)
-                c = colors.color_config(lr, rho)
-                
+                c = compute_rho_vibrancy_color(lr, rho, sorted_lrs, sorted_rhos)
+
                 ctx = PlotContext(
-                    ax=ax, x=steps, y=mean_data,
-                    label="_nolegend_", 
-                    plot_kwargs={"color": c, "linewidth": 1.5, "alpha": 0.8}
+                    ax=ax_gd, x=steps, y=mean_data,
+                    label="_nolegend_",
+                    plot_kwargs={"color": c, "linewidth": 2.0, "alpha": 0.8}
                 )
                 strategy.plot(ctx)
-                count += 1
+                count_gd += 1
 
-    if count > 0:
-        add_custom_split_legend(ax, colors, sorted_lrs, sorted_rhos)
+    # Plot SAM optimizers
+    for opt in [o for o in selected_opts if "SAM" in o]:
+        opt_params = all_params.get(opt, [])
+        for params in opt_params:
+            lr = params.get('lr')
+            rho = params.get('rho', 0.0)
+
+            run_data = []
+            steps = None
+            for seed in reader.seeds:
+                try:
+                    data = reader.get_data(opt, params, seed, plot_metric)
+                    steps_data = reader.get_data(opt, params, seed, 'steps')
+                    run_data.append(data)
+                    steps = steps_data
+                except KeyError: pass
+
+            if run_data and steps is not None:
+                mean_data = np.mean(np.stack(run_data), axis=0)
+                c = compute_rho_vibrancy_color(lr, rho, sorted_lrs, sorted_rhos)
+
+                ctx = PlotContext(
+                    ax=ax_sam, x=steps, y=mean_data,
+                    label="_nolegend_",
+                    plot_kwargs={"color": c, "linewidth": 2.0, "alpha": 0.8}
+                )
+                strategy.plot(ctx)
+                count_sam += 1
+
+    if count_gd > 0 or count_sam > 0:
+        # Add custom legend if enabled (matching sam_comparison style from plotting.py)
+        if show_legend:
+            legend_elements = []
+
+            # Learning Rate (Hue)
+            if sorted_lrs:
+                legend_elements.append(Patch(facecolor="none", edgecolor="none", label="Learning Rate (Hue):"))
+                # Use mid-rho for LR color examples
+                mid_rho_idx = len(sorted_rhos) // 2 if sorted_rhos else 0
+                sample_rho = sorted_rhos[mid_rho_idx] if sorted_rhos else 0.0
+                for lr in sorted_lrs:
+                    c_rgb = compute_rho_vibrancy_color(lr, sample_rho, sorted_lrs, sorted_rhos)
+                    legend_elements.append(Line2D([0], [0], color=c_rgb, linewidth=3, label=f"  lr={lr}"))
+
+            # Rho (Vibrancy)
+            if sorted_rhos and len(sorted_rhos) > 1:
+                legend_elements.append(Patch(facecolor="none", edgecolor="none", label=""))
+                legend_elements.append(Patch(facecolor="none", edgecolor="none", label="rho (Vibrancy, SAM only):"))
+                # Use sample LR for rho color examples
+                sample_lr = sorted_lrs[0] if sorted_lrs else 0.01
+                for rho in sorted_rhos:
+                    c_rgb = compute_rho_vibrancy_color(sample_lr, rho, sorted_lrs, sorted_rhos)
+                    legend_elements.append(Line2D([0], [0], color=c_rgb, linewidth=3, alpha=0.8, label=f"  rho={rho}"))
+
+            if legend_elements:
+                # Position legend above the plots using figure legend
+                fig.legend(
+                    handles=legend_elements,
+                    loc='upper center',
+                    bbox_to_anchor=(0.5, 1.02),
+                    ncol=min(len(legend_elements), 8),
+                    frameon=True,
+                    fontsize=9,
+                    handlelength=2.0,
+                    handleheight=0.7,
+                    labelspacing=0.3,
+                    columnspacing=1.5,
+                )
+
+        # Add title if provided
+        if plot_title:
+            fig.suptitle(plot_title, fontsize=14, y=1.08 if show_legend else 1.02)
+
         st.pyplot(fig)
-        
+
         fn = f"{plot_metric}_trajectory.pdf"
         img = io.BytesIO()
         fig.savefig(img, format='pdf', bbox_inches='tight')
