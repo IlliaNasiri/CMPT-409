@@ -20,8 +20,12 @@ def load_data(filepath):
     return ResultsReader(filepath)
 
 def get_available_npz_files():
-    """Recursively find all results.npz files."""
-    return list(Path(".").rglob("results.npz"))
+    """Recursively find all results.npz files in experiments/prayers/."""
+    base_path = Path("experiments/prayers/")
+    if not base_path.exists():
+        st.error(f"Directory not found: {base_path}. Please run from project root.")
+        return []
+    return list(base_path.rglob("results.npz"))
 
 # --- Helper: Exact Legend Replica from plotting.py ---
 def add_custom_split_legend(ax, color_manager, lrs, rhos, show_styles=False):
@@ -84,7 +88,7 @@ st.sidebar.title("Experiment Config")
 # File Selection
 available_files = get_available_npz_files()
 if not available_files:
-    st.error("No 'results.npz' files found in current directory.")
+    st.error("No 'results.npz' files found in experiments/prayers/.")
     st.stop()
 
 selected_file = st.sidebar.selectbox(
